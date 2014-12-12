@@ -11,6 +11,9 @@ else
     await c.invoke 'arith.Add', { a : 5, b : 4}, defer err, response
     if err? then console.log "error in RPC: #{err}"
     else assert.equal 9, response.c
-    x.close()
     console.log "all good!"
+    await c.invoke 'arith.Broken', {}, defer err, res
+    assert.ok err?
+    console.log "error back as planned: #{err.toString()}"
+    x.close()
 process.exit 0

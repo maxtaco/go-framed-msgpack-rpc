@@ -3,6 +3,7 @@ package main
 import (
     "log"
     "net"
+    "fmt"
     "net/rpc"
     "github.com/ugorji/go/codec"
     fmprpc "github.com/maxtaco/go-framed-msgpack-rpc"
@@ -23,8 +24,13 @@ type AddRes struct {
 	C int `codec:"c"`
 }
 
+type BrokenArg struct {}
+type BrokenRes struct {}
+
+
 type ArithInterface interface {
 	Add(arg *AddArg, res *AddRes) error
+    Broken(arg *BrokenArg, res *BrokenRes) error
 }
 
 func RegisterArith(server *rpc.Server, i ArithInterface) error {
@@ -40,6 +46,10 @@ type Arith struct {}
 func (a Arith) Add(arg *AddArg, res *AddRes) error {
 	res.C = arg.A + arg.B
 	return nil
+}
+
+func (a Arith) Broken(arg *BrokenArg, res *BrokenRes) error {
+    return fmt.Errorf("broken is broken")
 }
 
 func startServer() {
