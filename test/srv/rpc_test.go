@@ -1,0 +1,64 @@
+package framed_msgpack_rpc
+
+import (
+	"net"
+	"net/rpc"
+	"github.com/ugorji/go/codec"
+)
+
+//----------------------------------------------------------------------
+// This was generated from the keybase/protocol library, on
+// the test_rpc_1 branch.
+//
+
+
+type AddArg struct {
+	A int `codec:"a"`
+	B int `codec:"b"`
+}
+
+type AddRes struct {
+	C int `codec:"c"`
+}
+
+type ArithInterface interface {
+	Add(arg *AddArg, res *AddRes) error
+}
+
+func RegisterArith(server *rpc.Server, i ArithInterface) error {
+	return server.RegisterName("test.1.arith", i)
+}
+
+//
+// end autogen
+//----------------------------------------------------------------------
+
+type Arith struct {}
+
+func (a Arith) Add(arg *AddArg, res *AddRes) error {
+	res.C = res.A + res.B
+	return nil
+}
+
+func startServer() {
+    arith := new(Arith)
+
+    server := rpc.NewServer()
+    RegisterArith(server, arith)
+    var mh codec.MsgpackHandle
+
+    l, e := net.Listen("tcp", ":8222")
+    if e != nil {
+        log.Fatal("listen error:", e)
+    }
+
+    for {
+        conn, err := l.Accept()
+        if err != nil {
+            log.Fatal(err)
+        }
+        rpcCodec := MsgpackSpecRpc.ServerCodec(conn, &h)
+
+        go server.ServeCodec(rpcCodec)
+    }
+}
