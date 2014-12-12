@@ -22,3 +22,5 @@ _testmain.go
 *.exe
 *.test
 *.prof
+test/srv/node_modules
+test/srv/srv
