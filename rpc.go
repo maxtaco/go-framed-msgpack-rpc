@@ -2,9 +2,8 @@
 package framed_msgpack_rpc
 
 //
-// Most code borrowed from
-//	"github.com/ugorji/go/codec"
-// with small changes for framing
+// Most code borrowed from: github.com/ugorji/go/codec
+// with small changes for framing & for single args (rather than arrays of 1)
 //
 
 import (
@@ -65,22 +64,14 @@ func (c *rpcCodec) BufferedWriter() *bufio.Writer {
 	return c.bw
 }
 
-func (c *rpcCodec) write(obj1, obj2 interface{}, writeObj2, doFlush bool) (err error) {
+func (c *rpcCodec) write(obj interface{}) (err error) {
 	if c.cls {
 		return io.EOF
 	}
-	if err = c.enc.Encode(obj1); err != nil {
+	if err = c.enc.Encode(obj); err != nil {
 		return
 	}
-	if writeObj2 {
-		if err = c.enc.Encode(obj2); err != nil {
-			return
-		}
-	}
-	if doFlush {
-		return c.bw.Flush()
-	}
-	return
+	return c.bw.Flush()
 }
 
 func (c *rpcCodec) read(obj interface{}) (err error) {
@@ -114,27 +105,28 @@ type msgpackSpecRpcCodec struct {
 	framed bool
 }
 
-func (c *msgpackSpecRpcCodec) framedWrite(obj interface{}) error {
+func (c *msgpackSpecRpcCodec) framedWrite(obj interface{}) (err error) {
 	b2 := c.encodeToBytes(obj)
 	l := len(b2)
 	b1 := c.encodeToBytes(l)
 
 	if c.cls {
 		return io.EOF
-	} else if _, err := c.bw.Write(b1) ; err != nil {
+	} else if _, err = c.bw.Write(b1) ; err != nil {
 		return err
-	} else if _, err := c.bw.Write(b2); err != nil  {
+	} else if _, err = c.bw.Write(b2); err != nil  {
 		return err
+	} else {
+		err = c.bw.Flush()
 	}
-	c.bw.Flush()
-	return nil
+	return err
 }
 
 func (c *msgpackSpecRpcCodec) maybeFramedWrite(obj interface{}) error {
 	if c.framed {
 		return c.framedWrite(obj)
 	} else {
-		return c.write(obj, nil, false, true)
+		return c.write(obj)
 	}
 }
 
