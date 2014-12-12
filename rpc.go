@@ -14,6 +14,7 @@ import (
 	"sync"
 	"net/rpc"
 	"fmt"
+	"bytes"
 )
 
 
@@ -24,23 +25,33 @@ type rpcCodec struct {
 	rwc io.ReadWriteCloser
 	dec *codec.Decoder
 	enc *codec.Encoder
+	benc *codec.Encoder
 	bw  *bufio.Writer
 	br  *bufio.Reader
 	mu  sync.Mutex
 	cls bool
 	h   codec.Handle
+	byteBuf *bytes.Buffer
+}
+
+func (c *rpcCodec) encodeToBytes(obj interface{}) []byte {
+	c.benc.Encode(obj)
+	return c.byteBuf.Bytes()
 }
 
 func newRPCCodec(conn io.ReadWriteCloser, h codec.Handle) rpcCodec {
 	bw := bufio.NewWriter(conn)
 	br := bufio.NewReader(conn)
+	bb := new(bytes.Buffer)
 	return rpcCodec{
 		rwc: conn,
 		bw:  bw,
 		br:  br,
 		enc: codec.NewEncoder(bw, h),
 		dec: codec.NewDecoder(br, h),
+		benc : codec.NewEncoder(bb, h),
 		h:   h,
+		byteBuf : bb,
 	}
 }
 
@@ -98,6 +109,31 @@ func (c *rpcCodec) ReadResponseBody(body interface{}) error {
 
 type msgpackSpecRpcCodec struct {
 	rpcCodec
+	framed bool
+}
+
+func (c *msgpackSpecRpcCodec) framedWrite(obj interface{}) error {
+	b2 := c.encodeToBytes(obj)
+	l := len(b2)
+	b1 := c.encodeToBytes(l)
+
+	if c.cls {
+		return io.EOF
+	} else if _, err := c.bw.Write(b1) ; err != nil {
+		return err
+	} else if _, err := c.bw.Write(b2); err != nil  {
+		return err
+	}
+	c.bw.Flush()
+	return nil
+}
+
+func (c *msgpackSpecRpcCodec) maybeFramedWrite(obj interface{}) error {
+	if c.framed {
+		return c.framedWrite(obj)
+	} else {
+		return c.write(obj, nil, false, true)
+	}
 }
 
 // /////////////// Spec RPC Codec ///////////////////
@@ -111,8 +147,9 @@ func (c *msgpackSpecRpcCodec) WriteRequest(r *rpc.Request, body interface{}) err
 	} else {
 		bodyArr = []interface{}{body}
 	}
+
 	r2 := []interface{}{0, uint32(r.Seq), r.ServiceMethod, bodyArr}
-	return c.write(r2, nil, false, true)
+	return c.maybeFramedWrite(r2)
 }
 
 func (c *msgpackSpecRpcCodec) WriteResponse(r *rpc.Response, body interface{}) error {
@@ -124,7 +161,7 @@ func (c *msgpackSpecRpcCodec) WriteResponse(r *rpc.Response, body interface{}) e
 		body = nil
 	}
 	r2 := []interface{}{1, uint32(r.Seq), moe, body}
-	return c.write(r2, nil, false, true)
+	return c.maybeFramedWrite(r2)
 }
 
 func (c *msgpackSpecRpcCodec) ReadResponseHeader(r *rpc.Response) error {
@@ -147,6 +184,13 @@ func (c *msgpackSpecRpcCodec) parseCustomHeader(expectTypeByte byte, msgid *uint
 
 	if c.cls {
 		return io.EOF
+	}
+
+	if c.framed {
+		var frameByte int
+		if err = c.read(&frameByte); err != nil {
+			return err
+		}
 	}
 
 	// We read the response header by hand
@@ -195,12 +239,12 @@ type msgpackSpecRpc struct{}
 // Its methods (ServerCodec and ClientCodec) return values that implement RpcCodecBuffered.
 var MsgpackSpecRpc msgpackSpecRpc
 
-func (x msgpackSpecRpc) ServerCodec(conn io.ReadWriteCloser, h codec.Handle) rpc.ServerCodec {
-	return &msgpackSpecRpcCodec{newRPCCodec(conn, h)}
+func (x msgpackSpecRpc) ServerCodec(conn io.ReadWriteCloser, h codec.Handle, framed bool) rpc.ServerCodec {
+	return &msgpackSpecRpcCodec{newRPCCodec(conn, h), framed}
 }
 
-func (x msgpackSpecRpc) ClientCodec(conn io.ReadWriteCloser, h codec.Handle) rpc.ClientCodec {
-	return &msgpackSpecRpcCodec{newRPCCodec(conn, h)}
+func (x msgpackSpecRpc) ClientCodec(conn io.ReadWriteCloser, h codec.Handle, framed bool) rpc.ClientCodec {
+	return &msgpackSpecRpcCodec{newRPCCodec(conn, h), framed}
 }
 
 
