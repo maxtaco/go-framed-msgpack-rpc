@@ -11,6 +11,7 @@ import (
 	"github.com/ugorji/go/codec"
 	"bufio"
 	"io"
+	"io/ioutil"
 	"sync"
 	"net/rpc"
 	"fmt"
@@ -36,7 +37,8 @@ type rpcCodec struct {
 
 func (c *rpcCodec) encodeToBytes(obj interface{}) []byte {
 	c.benc.Encode(obj)
-	return c.byteBuf.Bytes()
+	b, _ := ioutil.ReadAll(c.byteBuf)
+	return b
 }
 
 func newRPCCodec(conn io.ReadWriteCloser, h codec.Handle) rpcCodec {
@@ -138,17 +140,7 @@ func (c *msgpackSpecRpcCodec) maybeFramedWrite(obj interface{}) error {
 
 // /////////////// Spec RPC Codec ///////////////////
 func (c *msgpackSpecRpcCodec) WriteRequest(r *rpc.Request, body interface{}) error {
-	// WriteRequest can write to both a Go service, and other services that do
-	// not abide by the 1 argument rule of a Go service.
-	// We discriminate based on if the body is a MsgpackSpecRpcMultiArgs
-	var bodyArr []interface{}
-	if m, ok := body.(codec.MsgpackSpecRpcMultiArgs); ok {
-		bodyArr = ([]interface{})(m)
-	} else {
-		bodyArr = []interface{}{body}
-	}
-
-	r2 := []interface{}{0, uint32(r.Seq), r.ServiceMethod, bodyArr}
+	r2 := []interface{}{0, uint32(r.Seq), r.ServiceMethod, body}
 	return c.maybeFramedWrite(r2)
 }
 
@@ -176,8 +168,11 @@ func (c *msgpackSpecRpcCodec) ReadRequestBody(body interface{}) error {
 	if body == nil { // read and discard
 		return c.read(nil)
 	}
-	bodyArr := []interface{}{body}
-	return c.read(&bodyArr)
+
+	// Don't pass an array with just argument --- pass the arg itself;
+	// this is a big difference from the underlying library.
+	// bodyArr := []interface{}{body}
+	return c.read(&body)
 }
 
 func (c *msgpackSpecRpcCodec) parseCustomHeader(expectTypeByte byte, msgid *uint64, methodOrError *string) (err error) {
