@@ -1,9 +1,11 @@
-package framed_msgpack_rpc
+package main
 
 import (
+    "log"
 	"net"
 	"net/rpc"
 	"github.com/ugorji/go/codec"
+    fmprpc "github.com/maxtaco/go-framed-msgpack-rpc"
 )
 
 //----------------------------------------------------------------------
@@ -36,7 +38,7 @@ func RegisterArith(server *rpc.Server, i ArithInterface) error {
 type Arith struct {}
 
 func (a Arith) Add(arg *AddArg, res *AddRes) error {
-	res.C = res.A + res.B
+	res.C = arg.A + arg.B
 	return nil
 }
 
@@ -57,8 +59,13 @@ func startServer() {
         if err != nil {
             log.Fatal(err)
         }
-        rpcCodec := MsgpackSpecRpc.ServerCodec(conn, &h)
+        rpcCodec := fmprpc.MsgpackSpecRpc.ServerCodec(conn, &mh, true)
 
         go server.ServeCodec(rpcCodec)
     }
+}
+
+
+func main() {
+	startServer()
 }
