@@ -15,3 +15,15 @@ func (p PacketizerError) Error() string {
 func NewPacketizerError(d string, a ...interface{}) PacketizerError {
 	return PacketizerError{fmt.Sprintf(d, a...)}
 }
+
+type DispatcherError struct {
+	msg string
+}
+
+func (p DispatcherError) Error() string {
+	return "dispatcher error: " + p.msg
+}
+
+func NewDispatcherError(d string, a ...interface{}) DispatcherError {
+	return DispatcherError{fmt.Sprintf(d, a...)}
+}

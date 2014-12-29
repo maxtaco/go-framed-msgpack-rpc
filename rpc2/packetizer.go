@@ -9,7 +9,6 @@ type Packetizer struct {
 	state     int
 	dispatch  Dispatcher
 	transport Transporter
-	decoder   Decoder
 }
 
 func NewPacketizer(d Dispatcher, t Transporter) *Packetizer {
@@ -22,7 +21,7 @@ func NewPacketizer(d Dispatcher, t Transporter) *Packetizer {
 
 func (p *Packetizer) getFrame() (int, error) {
 	var l int
-	err := p.decoder.Decode(&l)
+	err := p.transport.Decode(&l)
 	return l, err
 }
 
