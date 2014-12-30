@@ -19,7 +19,7 @@ func (m *Message) WrapError(err error) interface{} {
 }
 
 func (m *Message) DecodeError() (app error, dispatch error) {
-	app, dispatch = m.t.DecodeError()
+	app, dispatch = m.t.UnwrapError(m.makeDecodeNext())
 	return
 }
 
@@ -34,4 +34,10 @@ func (m *Message) decodeToNull() error {
 		m.Decode(&i)
 	}
 	return err
+}
+
+func (m *Message) makeDecodeNext() DecodeNext {
+	return func(i interface{}) error {
+		return m.Decode(i)
+	}
 }

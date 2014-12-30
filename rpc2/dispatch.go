@@ -118,9 +118,7 @@ func (d *Dispatch) Call(name string, arg interface{}) (ret DecodeNext, err error
 	}
 	mp := <-d.registerCall(seqid).ch
 	if err = mp.err; err == nil {
-		ret = func(i interface{}) error {
-			return mp.msg.Decode(i)
-		}
+		ret = mp.msg.makeDecodeNext()
 	}
 	return
 }
