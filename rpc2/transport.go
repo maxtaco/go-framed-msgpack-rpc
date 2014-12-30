@@ -5,4 +5,6 @@ type Transporter interface {
 	PacketizerError(error)
 	ReadByte() (byte, error)
 	Decode(interface{}) error
+	WrapError(error) interface{}
+	Encode(interface{}) error
 }

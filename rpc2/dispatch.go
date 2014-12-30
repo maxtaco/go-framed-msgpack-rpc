@@ -1,50 +1,117 @@
 package rpc2
 
 type Dispatcher interface {
-	Dispatch(msg Message) error
-	DispatchTriple(t Transporter) error
-	DispatchQuad(t Transporter) error
+	Dispatch(m Message) error
+}
+
+type ResultPair struct {
+	res interface{}
+	err error
+}
+
+type DecodeNext func(interface{}) error
+type ServeHook func(DecodeNext) (interface{}, error)
+
+type Method struct {
+	hook ServeHook
 }
 
 type Dispatch struct {
-	notifies map[string]Notify
-	methods  map[string]Method
-	calls    map[int]Call
+	methods map[string]Method
+	calls   map[int]Call
 }
 
-type Notify struct {
+type Request struct {
+	message  Message
+	dispatch *Dispatch
+	seqno    int
+	err      interface{}
+	res      interface{}
+	method   Method
 }
 
 type Call struct {
 }
 
-type Method struct {
+func (r *Request) reply() error {
+	v := []interface{}{
+		TYPE_RESPONSE,
+		r.seqno,
+		r.err,
+		r.res,
+	}
+	return r.message.Encode(v)
 }
 
-func (n *Notify) call(t Transporter) error {
-	return nil
+func (r *Request) serve() {
+	ch := make(chan ResultPair)
+
+	go func() {
+		decode := func(i interface{}) error {
+			return r.message.Decode(i)
+		}
+		res, err := r.method.hook(decode)
+		ch <- ResultPair{res, err}
+
+	}()
+
+	rp := <-ch
+	r.err = r.message.WrapError(rp.err)
+	r.res = rp.res
+	return
 }
 
-func (d *Dispatch) lookupNotify(m string) *Notify {
-	return nil
-}
+func (d *Dispatch) dispatchInvoke(m Message) (err error) {
+	var name string
+	req := Request{message: m, dispatch: d}
 
-func (d *Dispatch) DispatchTriple(t Transporter) error {
-	var l int
-	var e Errors
-	if e.Push(t.Decode(&l)) && l != TYPE_NOTIFY {
-		e.Push(NewDispatcherError("expected NOTIFY=%d; got %d", TYPE_NOTIFY, l))
+	if err = m.Decode(&req.seqno); err != nil {
+		return
+	}
+	if err = m.Decode(&name); err != nil {
+		return
 	}
 
-	var m string
-	if !e.Push(t.Decode(&m)) {
-		var dummy interface{}
-		e.Push(t.Decode(&dummy))
-	} else if ntfy := d.lookupNotify(m); ntfy != nil {
-		ntfy.call(t)
+	var found bool
+
+	if req.method, found = d.methods[name]; !found {
+		se := MethodNotFoundError{name}
+		req.err = m.WrapError(se)
+		m.decodeToNull()
 	} else {
-		e.Push(NewDispatcherError("unknown notify: %s", m))
+		req.serve()
 	}
 
-	return e.Error()
+	return req.reply()
+}
+
+func (d *Dispatch) dispatchResponse(m Message) (err error) {
+	return
+}
+
+func (d *Dispatch) Dispatch(m Message) (err error) {
+	if m.nFields == 4 {
+		err = d.dispatchQuad(m)
+	} else {
+		err = NewDispatcherError("can only handle message quads (got n=%d fields)", m.nFields)
+	}
+	return
+}
+
+func (d *Dispatch) dispatchQuad(m Message) (err error) {
+	var l int
+	if err = m.Decode(&l); err != nil {
+		return
+	}
+
+	switch l {
+	case TYPE_INVOKE:
+		d.dispatchInvoke(m)
+	case TYPE_RESPONSE:
+		d.dispatchResponse(m)
+	default:
+		err = NewDispatcherError("Unexpected message type=%d; wanted INVOKE=%d or RESPONSE=%d",
+			l, TYPE_INVOKE, TYPE_RESPONSE)
+	}
+	return
 }

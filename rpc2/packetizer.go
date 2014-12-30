@@ -32,13 +32,10 @@ func (p *Packetizer) getMessage(l int) (err error) {
 	}
 	nb := int(b)
 
-	switch nb {
-	case 0x93:
-		err = p.dispatch.DispatchTriple(p.transport)
-	case 0x94:
-		err = p.dispatch.DispatchQuad(p.transport)
-	default:
-		err = NewPacketizerError("wrong number of fields in message (%d)", nb)
+	if nb >= 0x91 && nb <= 0x9f {
+		err = p.dispatch.Dispatch(Message{p.transport, (nb - 0x90), 0})
+	} else {
+		err = NewPacketizerError("wrong message structure prefix (%d)", nb)
 	}
 
 	return err

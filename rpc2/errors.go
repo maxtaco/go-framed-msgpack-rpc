@@ -27,3 +27,11 @@ func (p DispatcherError) Error() string {
 func NewDispatcherError(d string, a ...interface{}) DispatcherError {
 	return DispatcherError{fmt.Sprintf(d, a...)}
 }
+
+type MethodNotFoundError struct {
+	m string
+}
+
+func (m MethodNotFoundError) Error() string {
+	return "method not found: " + m.m
+}
