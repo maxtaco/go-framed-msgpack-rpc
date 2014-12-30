@@ -1,5 +1,8 @@
 package rpc2
 
+import (
+)
+
 type Packetizer struct {
 	dispatch  Dispatcher
 	transport Transporter
@@ -18,8 +21,14 @@ func (p *Packetizer) getFrame() (int, error) {
 	return l, err
 }
 
+func (p *Packetizer) Clear() {
+	p.dispatch = nil
+	p.transport = nil
+}
+
 func (p *Packetizer) getMessage(l int) (err error) {
 	var b byte
+
 	if b, err = p.transport.ReadByte(); err != nil {
 		return err
 	}

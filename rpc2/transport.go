@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"sync"
-	"fmt"
 )
 
 type WrapErrorFunc func(error) interface{}
@@ -108,7 +107,7 @@ func (t *Transport) getWarnFunc() (ret WarnFunc) {
 	}
 	if ret == nil {
 		ret = func(s string) {
-			log.Print(ret)
+			log.Print(s)
 		}
 	}
 	return
@@ -120,10 +119,20 @@ func (t *Transport) warn(s string) {
 
 func (t *Transport) run2() (err error) {
 	err = t.packetizer.Packetize()
+	t.handlePacketizerFailure(err)
+	return
+}
+
+func (t *Transport) handlePacketizerFailure(err error) {
+	// For now, just throw everything away.  Eventually we might
+	// want to make a plan for reconnecting.
 	t.mutex.Lock()
 	t.warn(err.Error())
 	t.running = false
 	t.dispatcher.Reset()
+	t.dispatcher = nil
+	t.packetizer.Clear()
+	t.packetizer = nil
 	t.cpkg.Close()
 	t.cpkg = nil
 	t.mutex.Unlock()
@@ -168,6 +177,8 @@ func (t *Transport) Encode(i interface{}) (err error) {
 func (t *Transport) WrapError(e error) interface{} {
 	if t.hooks != nil && t.hooks.wrapError != nil {
 		return t.hooks.wrapError(e)
+	} else if e == nil {
+		return nil
 	} else {
 		return e.Error()
 	}
@@ -203,7 +214,7 @@ func (t *Transport) UnwrapError(dnf DecodeNext) (app error, dispatch error) {
 	var s string
 	if t.hooks != nil && t.hooks.unwrapError != nil {
 		app, dispatch = t.hooks.unwrapError(dnf)
-	} else if dispatch = dnf(&s); dispatch == nil {
+	} else if dispatch = dnf(&s); dispatch == nil && len(s) > 0 {
 		app = errors.New(s)
 	}
 	return

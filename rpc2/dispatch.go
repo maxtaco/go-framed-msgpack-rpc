@@ -80,6 +80,7 @@ func (r *Request) reply() error {
 		r.err,
 		r.res,
 	}
+	fmt.Printf("doing reply ---> %v\n", v)
 	return r.msg.Encode(v)
 }
 
