@@ -30,3 +30,18 @@ func MakeMethodName(prot string, method string) string {
 		return prot + "." + method
 	}
 }
+
+func SplitMethodName(n string) (p string, m string) {
+	split := -1
+	for i := len(n) - 1; i >= 0; i-- {
+		if n[i] == '.' {
+			p = n[0:split]
+			if i < len(n)-1 {
+				m = n[(split + 1):]
+			}
+			return
+		}
+	}
+	m = n
+	return
+}

@@ -13,7 +13,7 @@ type Dispatcher interface {
 	Dispatch(m Message) error
 	Warn(string)
 	Call(name string, arg interface{}) (ret DecodeNext, err error)
-	RegisterHook(string, ServeHook) error
+	RegisterProtocol(Protocol) error
 	Reset() error
 }
 
@@ -27,27 +27,28 @@ type MessagePair struct {
 	err error
 }
 
-type Method struct {
-	hook ServeHook
+type Protocol struct {
+	name    string
+	methods map[string]ServeHook
 }
 
 type Dispatch struct {
-	methods map[string]Method
-	calls   map[int]*Call
-	seqid   int
-	mutex   *sync.Mutex
-	xp      Transporter
-	warnFn  func(string)
+	protocols map[string]Protocol
+	calls     map[int]*Call
+	seqid     int
+	mutex     *sync.Mutex
+	xp        Transporter
+	warnFn    func(string)
 }
 
 func NewDispatch(xp Transporter, w WarnFunc) *Dispatch {
 	return &Dispatch{
-		methods: make(map[string]Method),
-		calls:   make(map[int]*Call),
-		seqid:   0,
-		mutex:   new(sync.Mutex),
-		xp:      xp,
-		warnFn:  w,
+		protocols: make(map[string]Protocol),
+		calls:     make(map[int]*Call),
+		seqid:     0,
+		mutex:     new(sync.Mutex),
+		xp:        xp,
+		warnFn:    w,
 	}
 }
 
@@ -57,7 +58,7 @@ type Request struct {
 	seqno    int
 	err      interface{}
 	res      interface{}
-	method   Method
+	hook     ServeHook
 }
 
 type Call struct {
@@ -86,7 +87,7 @@ func (r *Request) serve() {
 	ch := make(chan ResultPair)
 
 	go func() {
-		res, err := r.method.hook(r.msg.makeDecodeNext())
+		res, err := r.hook(r.msg.makeDecodeNext())
 		ch <- ResultPair{res, err}
 
 	}()
@@ -95,11 +96,6 @@ func (r *Request) serve() {
 	r.err = r.msg.WrapError(rp.err)
 	r.res = rp.res
 	return
-}
-
-func (d *Dispatch) RegisterHook(name string, hook ServeHook) error {
-	d.methods[name] = Method{hook: hook}
-	return nil
 }
 
 func (d *Dispatch) nextSeqid() int {
@@ -133,6 +129,16 @@ func (d *Dispatch) Call(name string, arg interface{}) (ret DecodeNext, err error
 	return
 }
 
+func (d *Dispatch) findServeHook(n string) (srv ServeHook, err error) {
+	p, m := SplitMethodName(n)
+	if prot, found := d.protocols[p]; !found {
+		err = ProtocolNotFoundError{p}
+	} else if srv, found = prot.methods[m]; !found {
+		err = MethodNotFoundError{p, m}
+	}
+	return
+}
+
 func (d *Dispatch) dispatchCall(m Message) (err error) {
 	var name string
 	req := Request{msg: m, dispatch: d}
@@ -144,10 +150,8 @@ func (d *Dispatch) dispatchCall(m Message) (err error) {
 		return
 	}
 
-	var found bool
-
-	if req.method, found = d.methods[name]; !found {
-		se := MethodNotFoundError{name}
+	var se error
+	if req.hook, se = d.findServeHook(name); se != nil {
 		req.err = m.WrapError(se)
 		if err = m.decodeToNull(); err != nil {
 			return
@@ -157,6 +161,15 @@ func (d *Dispatch) dispatchCall(m Message) (err error) {
 	}
 
 	return req.reply()
+}
+
+func (d *Dispatch) RegisterProtocol(p Protocol) (err error) {
+	if _, found := d.protocols[p.name]; found {
+		err = AlreadyRegisteredError{p.name}
+	} else {
+		d.protocols[p.name] = p
+	}
+	return err
 }
 
 func (d *Dispatch) dispatchResponse(m Message) (err error) {

@@ -117,10 +117,12 @@ func (t *Transport) warn(s string) {
 	t.getWarnFunc()(s)
 }
 
-func (t *Transport) run() {
+func (t *Transport) run() (err error) {
 	dostart := false
 	t.mutex.Lock()
-	if !t.running && t.IsConnected() {
+	if !t.IsConnected() {
+		err = DisconnectedError{}
+	} else if !t.running && t.IsConnected() {
 		dostart = true
 		t.running = true
 	}
@@ -137,6 +139,7 @@ func (t *Transport) run() {
 			t.mutex.Unlock()
 		}()
 	}
+	return
 }
 
 func (t *Transport) Encode(i interface{}) (err error) {

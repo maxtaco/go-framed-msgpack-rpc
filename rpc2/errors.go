@@ -29,11 +29,20 @@ func NewDispatcherError(d string, a ...interface{}) DispatcherError {
 }
 
 type MethodNotFoundError struct {
+	p string
 	m string
 }
 
 func (m MethodNotFoundError) Error() string {
-	return "method not found: " + m.m
+	return fmt.Sprintf("method '%s' not found in protocol '%s'", m.m, m.p)
+}
+
+type ProtocolNotFoundError struct {
+	p string
+}
+
+func (p ProtocolNotFoundError) Error() string {
+	return "protocol not found: " + p.p
 }
 
 type EofError struct{}
@@ -46,4 +55,12 @@ type DisconnectedError struct{}
 
 func (e DisconnectedError) Error() string {
 	return "disconnected; no connection to remote"
+}
+
+type AlreadyRegisteredError struct {
+	p string
+}
+
+func (a AlreadyRegisteredError) Error() string {
+	return a.p + ": protocol already registered"
 }
