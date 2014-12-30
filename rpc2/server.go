@@ -11,3 +11,7 @@ func NewServer(xp *Transport) *Server {
 func (s *Server) Register(p Protocol) (err error) {
 	return s.xp.dispatcher.RegisterProtocol(p)
 }
+
+func (s *Server) Run(bg bool) error {
+	return s.xp.run(bg)
+}

@@ -28,8 +28,8 @@ type MessagePair struct {
 }
 
 type Protocol struct {
-	name    string
-	methods map[string]ServeHook
+	Name    string
+	Methods map[string]ServeHook
 }
 
 type Dispatch struct {
@@ -133,7 +133,7 @@ func (d *Dispatch) findServeHook(n string) (srv ServeHook, err error) {
 	p, m := SplitMethodName(n)
 	if prot, found := d.protocols[p]; !found {
 		err = ProtocolNotFoundError{p}
-	} else if srv, found = prot.methods[m]; !found {
+	} else if srv, found = prot.Methods[m]; !found {
 		err = MethodNotFoundError{p, m}
 	}
 	return
@@ -164,10 +164,10 @@ func (d *Dispatch) dispatchCall(m Message) (err error) {
 }
 
 func (d *Dispatch) RegisterProtocol(p Protocol) (err error) {
-	if _, found := d.protocols[p.name]; found {
-		err = AlreadyRegisteredError{p.name}
+	if _, found := d.protocols[p.Name]; found {
+		err = AlreadyRegisteredError{p.Name}
 	} else {
-		d.protocols[p.name] = p
+		d.protocols[p.Name] = p
 	}
 	return err
 }

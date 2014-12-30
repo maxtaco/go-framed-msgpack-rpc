@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"fmt"
 )
 
 type WrapErrorFunc func(error) interface{}
@@ -117,27 +118,34 @@ func (t *Transport) warn(s string) {
 	t.getWarnFunc()(s)
 }
 
-func (t *Transport) run() (err error) {
+func (t *Transport) run2() (err error) {
+	err = t.packetizer.Packetize()
+	t.mutex.Lock()
+	t.warn(err.Error())
+	t.running = false
+	t.dispatcher.Reset()
+	t.cpkg.Close()
+	t.cpkg = nil
+	t.mutex.Unlock()
+	return
+}
+
+func (t *Transport) run(bg bool) (err error) {
 	dostart := false
 	t.mutex.Lock()
-	if !t.IsConnected() {
+	if t.cpkg == nil {
 		err = DisconnectedError{}
-	} else if !t.running && t.IsConnected() {
+	} else if !t.running {
 		dostart = true
 		t.running = true
 	}
 	t.mutex.Unlock()
 	if dostart {
-		go func() {
-			err := t.packetizer.Packetize()
-			t.mutex.Lock()
-			t.warn(err.Error())
-			t.running = false
-			t.dispatcher.Reset()
-			t.cpkg.Close()
-			t.cpkg = nil
-			t.mutex.Unlock()
-		}()
+		if bg {
+			go t.run2()
+		} else {
+			err = t.run2()
+		}
 	}
 	return
 }
@@ -210,7 +218,7 @@ func (t *Transport) RawWrite(b []byte) (err error) {
 }
 
 func (t *Transport) GetDispatcher() (d Dispatcher, err error) {
-	t.run()
+	t.run(true)
 	if !t.IsConnected() {
 		err = DisconnectedError{}
 	} else {
