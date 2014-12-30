@@ -61,7 +61,6 @@ func ArithProtocol(i ArithInferface) rpc2.Protocol {
 				var args AddArgs
 				if err = nxt(&args); err == nil {
 					ret, err = i.Add(&args)
-					fmt.Printf("ok returning %v %v\n", ret, err)
 				}
 				return
 			},
