@@ -13,6 +13,7 @@ type Dispatcher interface {
 	Warn(string)
 	Call(name string, arg interface{}) (ret DecodeNext, err error)
 	RegisterHook(string, ServeHook) error
+	Reset() error
 }
 
 type ResultPair struct {
@@ -179,6 +180,16 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 	call.ch <- mp
 
 	return
+}
+
+func (d *Dispatch) Reset() error {
+	d.mutex.Lock()
+	for k, v := range d.calls {
+		v.ch <- MessagePair{err: EofError{}}
+		delete(d.calls, k)
+	}
+	d.mutex.Unlock()
+	return nil
 }
 
 func (d *Dispatch) Warn(s string) {

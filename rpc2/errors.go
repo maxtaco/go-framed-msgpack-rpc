@@ -35,3 +35,9 @@ type MethodNotFoundError struct {
 func (m MethodNotFoundError) Error() string {
 	return "method not found: " + m.m
 }
+
+type EofError struct{}
+
+func (e EofError) Error() string {
+	return "EOF from server"
+}
