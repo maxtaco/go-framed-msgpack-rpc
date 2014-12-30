@@ -41,3 +41,9 @@ type EofError struct{}
 func (e EofError) Error() string {
 	return "EOF from server"
 }
+
+type DisconnectedError struct{}
+
+func (e DisconnectedError) Error() string {
+	return "disconnected; no connection to remote"
+}

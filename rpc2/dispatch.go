@@ -7,6 +7,7 @@ import (
 
 type DecodeNext func(interface{}) error
 type ServeHook func(DecodeNext) (interface{}, error)
+type WarnFunc func(string)
 
 type Dispatcher interface {
 	Dispatch(m Message) error
@@ -37,6 +38,17 @@ type Dispatch struct {
 	mutex   *sync.Mutex
 	xp      Transporter
 	warnFn  func(string)
+}
+
+func NewDispatch(xp Transporter, w WarnFunc) *Dispatch {
+	return &Dispatch{
+		methods: make(map[string]Method),
+		calls:   make(map[int]*Call),
+		seqid:   0,
+		mutex:   new(sync.Mutex),
+		xp:      xp,
+		warnFn:  w,
+	}
 }
 
 type Request struct {
@@ -74,10 +86,7 @@ func (r *Request) serve() {
 	ch := make(chan ResultPair)
 
 	go func() {
-		decode := func(i interface{}) error {
-			return r.msg.Decode(i)
-		}
-		res, err := r.method.hook(decode)
+		res, err := r.method.hook(r.msg.makeDecodeNext())
 		ch <- ResultPair{res, err}
 
 	}()

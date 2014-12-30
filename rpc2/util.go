@@ -1,5 +1,7 @@
 package rpc2
 
+import ()
+
 type Errors struct {
 	v []error
 }
@@ -18,5 +20,13 @@ func (e *Errors) Error() error {
 		return e.v[0]
 	} else {
 		return nil
+	}
+}
+
+func MakeMethodName(prot string, method string) string {
+	if len(prot) == 0 {
+		return method
+	} else {
+		return prot + "." + method
 	}
 }

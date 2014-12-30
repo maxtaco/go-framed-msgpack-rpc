@@ -6,7 +6,9 @@ import (
 	"errors"
 	"github.com/ugorji/go/codec"
 	"io/ioutil"
+	"log"
 	"net"
+	"sync"
 )
 
 type WrapErrorFunc func(error) interface{}
@@ -19,31 +21,76 @@ type Transporter interface {
 	WrapError(error) interface{}
 	Encode(interface{}) error
 	UnwrapError(DecodeNext) (error, error)
+	GetDispatcher() (Dispatcher, error)
+}
+
+type TransportHooks struct {
+	wrapError   WrapErrorFunc
+	unwrapError UnwrapErrorFunc
+	warn        WarnFunc
+}
+
+type ConPackage struct {
+	con net.Conn
+	br  *bufio.Reader
+	dec *codec.Decoder
+}
+
+func (c *ConPackage) ReadByte() (b byte, e error) {
+	return c.br.ReadByte()
+}
+
+func (c *ConPackage) Write(b []byte) (err error) {
+	_, err = c.con.Write(b)
+	return
+}
+
+func (c *ConPackage) Close() error {
+	return c.con.Close()
 }
 
 type Transport struct {
-	con         net.Conn
-	wrapError   WrapErrorFunc
-	unwrapError UnwrapErrorFunc
-	br          *bufio.Reader
-	buf         *bytes.Buffer
-	enc         *codec.Encoder
-	dec         *codec.Decoder
+	hooks      *TransportHooks
+	mh         *codec.MsgpackHandle
+	cpkg       *ConPackage
+	buf        *bytes.Buffer
+	enc        *codec.Encoder
+	mutex      *sync.Mutex
+	dispatcher Dispatcher
+	packetizer *Packetizer
+	running    bool
 }
 
-func NewTransport(c net.Conn, w WrapErrorFunc, u UnwrapErrorFunc) *Transport {
+func NewConPackage(c net.Conn, mh *codec.MsgpackHandle) *ConPackage {
+	br := bufio.NewReader(c)
+	return &ConPackage{
+		con: c,
+		br:  br,
+		dec: codec.NewDecoder(br, mh),
+	}
+}
+
+func (t *Transport) IsConnected() bool {
+	t.mutex.Lock()
+	ret := (t.cpkg != nil)
+	t.mutex.Unlock()
+	return ret
+}
+
+func NewTransport(c net.Conn, h *TransportHooks) *Transport {
 	var mh codec.MsgpackHandle
 	buf := new(bytes.Buffer)
-	br := bufio.NewReader(c)
-	return &Transport{
-		con:         c,
-		wrapError:   w,
-		unwrapError: u,
-		br:          br,
-		buf:         buf,
-		enc:         codec.NewEncoder(buf, &mh),
-		dec:         codec.NewDecoder(br, &mh),
+	ret := &Transport{
+		hooks: h,
+		mh:    &mh,
+		cpkg:  NewConPackage(c, &mh),
+		buf:   buf,
+		enc:   codec.NewEncoder(buf, &mh),
+		mutex: new(sync.Mutex),
 	}
+	ret.dispatcher = NewDispatch(ret, ret.getWarnFunc())
+	ret.packetizer = NewPacketizer(ret.dispatcher, ret)
+	return ret
 }
 
 func (t *Transport) encodeToBytes(i interface{}) (v []byte, err error) {
@@ -52,6 +99,44 @@ func (t *Transport) encodeToBytes(i interface{}) (v []byte, err error) {
 	}
 	v, _ = ioutil.ReadAll(t.buf)
 	return
+}
+
+func (t *Transport) getWarnFunc() (ret WarnFunc) {
+	if t.hooks != nil {
+		ret = t.hooks.warn
+	}
+	if ret == nil {
+		ret = func(s string) {
+			log.Print(ret)
+		}
+	}
+	return
+}
+
+func (t *Transport) warn(s string) {
+	t.getWarnFunc()(s)
+}
+
+func (t *Transport) run() {
+	dostart := false
+	t.mutex.Lock()
+	if !t.running && t.IsConnected() {
+		dostart = true
+		t.running = true
+	}
+	t.mutex.Unlock()
+	if dostart {
+		go func() {
+			err := t.packetizer.Packetize()
+			t.mutex.Lock()
+			t.warn(err.Error())
+			t.running = false
+			t.dispatcher.Reset()
+			t.cpkg.Close()
+			t.cpkg = nil
+			t.mutex.Unlock()
+		}()
+	}
 }
 
 func (t *Transport) Encode(i interface{}) (err error) {
@@ -70,32 +155,63 @@ func (t *Transport) Encode(i interface{}) (err error) {
 }
 
 func (t *Transport) WrapError(e error) interface{} {
-	if t.wrapError != nil {
-		return t.wrapError(e)
+	if t.hooks != nil && t.hooks.wrapError != nil {
+		return t.hooks.wrapError(e)
 	} else {
 		return e.Error()
 	}
 }
 
-func (t *Transport) ReadByte() (byte, error) {
-	return t.br.ReadByte()
+func (t *Transport) getConPackage() (ret *ConPackage, err error) {
+	t.mutex.Lock()
+	ret = t.cpkg
+	t.mutex.Unlock()
+	if ret == nil {
+		err = DisconnectedError{}
+	}
+	return
 }
 
-func (t *Transport) Decode(i interface{}) error {
-	return t.dec.Decode(i)
+func (t *Transport) ReadByte() (b byte, err error) {
+	var cp *ConPackage
+	if cp, err = t.getConPackage(); err == nil {
+		b, err = cp.ReadByte()
+	}
+	return
+}
+
+func (t *Transport) Decode(i interface{}) (err error) {
+	var cp *ConPackage
+	if cp, err = t.getConPackage(); err == nil {
+		err = cp.dec.Decode(i)
+	}
+	return
 }
 
 func (t *Transport) UnwrapError(dnf DecodeNext) (app error, dispatch error) {
 	var s string
-	if t.unwrapError != nil {
-		app, dispatch = t.unwrapError(dnf)
+	if t.hooks != nil && t.hooks.unwrapError != nil {
+		app, dispatch = t.hooks.unwrapError(dnf)
 	} else if dispatch = dnf(&s); dispatch == nil {
 		app = errors.New(s)
 	}
 	return
 }
 
-func (t *Transport) RawWrite(b []byte) error {
-	_, err := t.con.Write(b)
+func (t *Transport) RawWrite(b []byte) (err error) {
+	var cp *ConPackage
+	if cp, err = t.getConPackage(); err == nil {
+		err = cp.Write(b)
+	}
 	return err
+}
+
+func (t *Transport) GetDispatcher() (d Dispatcher, err error) {
+	t.run()
+	if !t.IsConnected() {
+		err = DisconnectedError{}
+	} else {
+		d = t.dispatcher
+	}
+	return
 }
