@@ -18,6 +18,11 @@ func (m *Message) WrapError(err error) interface{} {
 	return m.t.WrapError(err)
 }
 
+func (m *Message) DecodeError() (app error, dispatch error) {
+	app, dispatch = m.t.DecodeError()
+	return
+}
+
 func (m *Message) Encode(i interface{}) error {
 	return m.t.Encode(i)
 }

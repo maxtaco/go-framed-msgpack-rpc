@@ -7,4 +7,5 @@ type Transporter interface {
 	Decode(interface{}) error
 	WrapError(error) interface{}
 	Encode(interface{}) error
+	DecodeError() (error, error)
 }

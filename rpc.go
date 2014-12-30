@@ -95,7 +95,8 @@ func (c *rpcCodec) Close() error {
 }
 
 func (c *rpcCodec) ReadResponseBody(body interface{}) error {
-	return c.read(body)
+	ret := c.read(body)
+	return ret
 }
 
 //--------------------------------------------------
