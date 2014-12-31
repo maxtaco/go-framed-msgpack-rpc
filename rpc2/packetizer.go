@@ -1,7 +1,6 @@
 package rpc2
 
-import (
-)
+import ()
 
 type Packetizer struct {
 	dispatch  Dispatcher
@@ -17,7 +16,11 @@ func NewPacketizer(d Dispatcher, t Transporter) *Packetizer {
 
 func (p *Packetizer) getFrame() (int, error) {
 	var l int
+
+	p.transport.ReadLock()
 	err := p.transport.Decode(&l)
+	p.transport.ReadUnlock()
+
 	return l, err
 }
 

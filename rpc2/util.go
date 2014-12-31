@@ -36,7 +36,7 @@ func SplitMethodName(n string) (p string, m string) {
 		if n[i] == '.' {
 			p = n[0:i]
 			if i < len(n)-1 {
-				m = n[(i+ 1):]
+				m = n[(i + 1):]
 			}
 			return
 		}

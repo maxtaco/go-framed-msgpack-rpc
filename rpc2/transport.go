@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/ugorji/go/codec"
 	"io/ioutil"
 	"log"
@@ -22,6 +23,8 @@ type Transporter interface {
 	Encode(interface{}) error
 	UnwrapError(DecodeNext) (error, error)
 	GetDispatcher() (Dispatcher, error)
+	ReadLock()
+	ReadUnlock()
 }
 
 type TransportHooks struct {
@@ -56,6 +59,7 @@ type Transport struct {
 	buf        *bytes.Buffer
 	enc        *codec.Encoder
 	mutex      *sync.Mutex
+	rdlck      *sync.Mutex
 	dispatcher Dispatcher
 	packetizer *Packetizer
 	running    bool
@@ -87,11 +91,15 @@ func NewTransport(c net.Conn, h *TransportHooks) *Transport {
 		buf:   buf,
 		enc:   codec.NewEncoder(buf, &mh),
 		mutex: new(sync.Mutex),
+		rdlck: new(sync.Mutex),
 	}
 	ret.dispatcher = NewDispatch(ret, ret.getWarnFunc())
 	ret.packetizer = NewPacketizer(ret.dispatcher, ret)
 	return ret
 }
+
+func (t *Transport) ReadLock()   { t.rdlck.Lock() }
+func (t *Transport) ReadUnlock() { t.rdlck.Unlock() }
 
 func (t *Transport) encodeToBytes(i interface{}) (v []byte, err error) {
 	if err = t.enc.Encode(i); err != nil {
@@ -205,6 +213,7 @@ func (t *Transport) ReadByte() (b byte, err error) {
 func (t *Transport) Decode(i interface{}) (err error) {
 	var cp *ConPackage
 	if cp, err = t.getConPackage(); err == nil {
+		fmt.Printf("calling decode... %v\n", i)
 		err = cp.dec.Decode(i)
 	}
 	return
@@ -216,6 +225,9 @@ func (t *Transport) UnwrapError(dnf DecodeNext) (app error, dispatch error) {
 		app, dispatch = t.hooks.unwrapError(dnf)
 	} else if dispatch = dnf(&s); dispatch == nil && len(s) > 0 {
 		app = errors.New(s)
+	} else {
+		fmt.Printf("called decode once --> %v\n", s)
+
 	}
 	return
 }

@@ -1,18 +1,19 @@
 package rpc2
 
+import ()
+
 type Client struct {
-	xp       *Transport
-	protocol string
+	xp *Transport
 }
 
-func NewClient(xp *Transport, protocol string) *Client {
-	return &Client{xp, protocol}
+func NewClient(xp *Transport) *Client {
+	return &Client{xp}
 }
 
-func (c *Client) Call(method string, arg interface{}) (ret DecodeNext, err error) {
+func (c *Client) Call(method string, arg interface{}, res interface{}) (err error) {
 	var d Dispatcher
 	if d, err = c.xp.GetDispatcher(); err == nil {
-		ret, err = d.Call(MakeMethodName(c.protocol, method), arg)
+		err = d.Call(method, arg, res)
 	}
 	return
 }

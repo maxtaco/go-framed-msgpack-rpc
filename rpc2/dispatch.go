@@ -12,7 +12,7 @@ type WarnFunc func(string)
 type Dispatcher interface {
 	Dispatch(m Message) error
 	Warn(string)
-	Call(name string, arg interface{}) (ret DecodeNext, err error)
+	Call(name string, arg interface{}, res interface{}) error
 	RegisterProtocol(Protocol) error
 	Reset() error
 }
@@ -22,8 +22,8 @@ type ResultPair struct {
 	err error
 }
 
-type MessagePair struct {
-	msg Message
+type ClientResultPair struct {
+	nxt DecodeNext
 	err error
 }
 
@@ -62,13 +62,15 @@ type Request struct {
 }
 
 type Call struct {
-	ch    chan MessagePair
+	ch    chan error
+	res   interface{}
 	seqid int
 }
 
-func NewCall(i int) *Call {
+func NewCall(i int, res interface{}) *Call {
 	return &Call{
-		ch:    make(chan MessagePair),
+		ch:    make(chan error),
+		res:   res,
 		seqid: i,
 	}
 }
@@ -90,7 +92,6 @@ func (r *Request) serve() {
 	go func() {
 		res, err := r.hook(r.msg.makeDecodeNext())
 		ch <- ResultPair{res, err}
-
 	}()
 
 	rp := <-ch
@@ -107,15 +108,15 @@ func (d *Dispatch) nextSeqid() int {
 	return ret
 }
 
-func (d *Dispatch) registerCall(seqid int) *Call {
-	ret := NewCall(seqid)
+func (d *Dispatch) registerCall(seqid int, res interface{}) *Call {
+	ret := NewCall(seqid, res)
 	d.mutex.Lock()
 	d.calls[seqid] = ret
 	d.mutex.Unlock()
 	return ret
 }
 
-func (d *Dispatch) Call(name string, arg interface{}) (ret DecodeNext, err error) {
+func (d *Dispatch) Call(name string, arg interface{}, res interface{}) (err error) {
 
 	seqid := d.nextSeqid()
 	v := []interface{}{TYPE_CALL, seqid, name, arg}
@@ -123,10 +124,7 @@ func (d *Dispatch) Call(name string, arg interface{}) (ret DecodeNext, err error
 	if err != nil {
 		return
 	}
-	mp := <-d.registerCall(seqid).ch
-	if err = mp.err; err == nil {
-		ret = mp.msg.makeDecodeNext()
-	}
+	err = <-d.registerCall(seqid, res).ch
 	return
 }
 
@@ -179,12 +177,15 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 	if err = m.Decode(&seqno); err != nil {
 		return
 	}
+	fmt.Printf("dispatching msg %d\n", seqno)
 
 	var call *Call
 	d.mutex.Lock()
+	fmt.Printf("ok, got lock....\n")
 	if call = d.calls[seqno]; call != nil {
 		delete(d.calls, seqno)
 	}
+	fmt.Printf("got call....%v\n", call)
 	d.mutex.Unlock()
 
 	if call == nil {
@@ -193,14 +194,22 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 		return
 	}
 
-	mp := MessagePair{msg: m}
+	var apperr error
 
-	if mp.err, err = m.DecodeError(); err != nil {
-		m.decodeToNull()
-		return
+	if apperr, err = m.DecodeError(); err == nil {
+		err = m.Decode(call.res)
 	}
 
-	call.ch <- mp
+	if err != nil {
+		m.decodeToNull()
+		if apperr == nil {
+			apperr = err
+		}
+	}
+
+	fmt.Printf("ok, snending it ... %v\n", apperr)
+
+	call.ch <- apperr
 
 	return
 }
@@ -208,7 +217,7 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 func (d *Dispatch) Reset() error {
 	d.mutex.Lock()
 	for k, v := range d.calls {
-		v.ch <- MessagePair{err: EofError{}}
+		v.ch <- EofError{}
 		delete(d.calls, k)
 	}
 	d.mutex.Unlock()

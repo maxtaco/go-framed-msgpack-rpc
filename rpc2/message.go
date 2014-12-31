@@ -1,5 +1,7 @@
 package rpc2
 
+import ()
+
 type Message struct {
 	t        Transporter
 	nFields  int
@@ -37,7 +39,11 @@ func (m *Message) decodeToNull() error {
 }
 
 func (m *Message) makeDecodeNext() DecodeNext {
+	// Reserve the next object
+	m.t.ReadLock()
 	return func(i interface{}) error {
-		return m.Decode(i)
+		ret := m.Decode(i)
+		m.t.ReadUnlock()
+		return ret
 	}
 }
