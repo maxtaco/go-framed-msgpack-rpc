@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"github.com/ugorji/go/codec"
 	"io/ioutil"
-	"log"
 	"net"
 	"sync"
 )
@@ -21,10 +20,6 @@ type Transporter interface {
 	GetDispatcher() (Dispatcher, error)
 	ReadLock()
 	ReadUnlock()
-}
-
-type TransportHooks struct {
-	warn WarnFunc
 }
 
 type ConPackage struct {
@@ -47,7 +42,7 @@ func (c *ConPackage) Close() error {
 }
 
 type Transport struct {
-	hooks      *TransportHooks
+	log        Logger
 	mh         *codec.MsgpackHandle
 	cpkg       *ConPackage
 	buf        *bytes.Buffer
@@ -75,11 +70,14 @@ func (t *Transport) IsConnected() bool {
 	return ret
 }
 
-func NewTransport(c net.Conn, h *TransportHooks) *Transport {
+func NewTransport(c net.Conn, l Logger) *Transport {
 	var mh codec.MsgpackHandle
+	if l == nil {
+		l = NewSimpleLog()
+	}
 	buf := new(bytes.Buffer)
 	ret := &Transport{
-		hooks: h,
+		log:   l,
 		mh:    &mh,
 		cpkg:  NewConPackage(c, &mh),
 		buf:   buf,
@@ -87,7 +85,7 @@ func NewTransport(c net.Conn, h *TransportHooks) *Transport {
 		mutex: new(sync.Mutex),
 		rdlck: new(sync.Mutex),
 	}
-	ret.dispatcher = NewDispatch(ret, ret.getWarnFunc())
+	ret.dispatcher = NewDispatch(ret, l)
 	ret.packetizer = NewPacketizer(ret.dispatcher, ret)
 	return ret
 }
@@ -103,22 +101,6 @@ func (t *Transport) encodeToBytes(i interface{}) (v []byte, err error) {
 	return
 }
 
-func (t *Transport) getWarnFunc() (ret WarnFunc) {
-	if t.hooks != nil {
-		ret = t.hooks.warn
-	}
-	if ret == nil {
-		ret = func(s string) {
-			log.Print(s)
-		}
-	}
-	return
-}
-
-func (t *Transport) warn(s string) {
-	t.getWarnFunc()(s)
-}
-
 func (t *Transport) run2() (err error) {
 	err = t.packetizer.Packetize()
 	t.handlePacketizerFailure(err)
@@ -129,7 +111,7 @@ func (t *Transport) handlePacketizerFailure(err error) {
 	// For now, just throw everything away.  Eventually we might
 	// want to make a plan for reconnecting.
 	t.mutex.Lock()
-	t.warn(err.Error())
+	t.log.Warning(err.Error())
 	t.running = false
 	t.dispatcher.Reset()
 	t.dispatcher = nil

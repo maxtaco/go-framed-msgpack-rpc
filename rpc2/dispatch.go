@@ -1,17 +1,14 @@
 package rpc2
 
 import (
-	"fmt"
 	"sync"
 )
 
 type DecodeNext func(interface{}) error
 type ServeHook func(DecodeNext) (interface{}, error)
-type WarnFunc func(string)
 
 type Dispatcher interface {
 	Dispatch(m Message) error
-	Warn(string)
 	Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) error
 	RegisterProtocol(Protocol) error
 	Reset() error
@@ -39,27 +36,29 @@ type Dispatch struct {
 	seqid     int
 	mutex     *sync.Mutex
 	xp        Transporter
-	warnFn    func(string)
+	log       Logger
 }
 
-func NewDispatch(xp Transporter, w WarnFunc) *Dispatch {
+func NewDispatch(xp Transporter, l Logger) *Dispatch {
 	return &Dispatch{
 		protocols: make(map[string]Protocol),
 		calls:     make(map[int]*Call),
 		seqid:     0,
 		mutex:     new(sync.Mutex),
 		xp:        xp,
-		warnFn:    w,
+		log:       l,
 	}
 }
 
 type Request struct {
-	msg      Message
-	dispatch *Dispatch
-	seqno    int
-	err      interface{}
-	res      interface{}
-	hook     ServeHook
+	msg       Message
+	dispatch  *Dispatch
+	seqno     int
+	method    string
+	err       interface{}
+	res       interface{}
+	hook      ServeHook
+	wrapError WrapErrorFunc
 }
 
 type Call struct {
@@ -88,18 +87,21 @@ func (r *Request) reply() error {
 	return r.msg.Encode(v)
 }
 
-func (r *Request) serve(wrapError WrapErrorFunc) {
-	ch := make(chan ResultPair)
+func (r *Request) serve() {
+	prof := r.dispatch.log.StartProfiler("serve %s", r.method)
+	nxt := r.msg.makeDecodeNext()
 
 	go func() {
-		res, err := r.hook(r.msg.makeDecodeNext())
-		ch <- ResultPair{res, err}
+		res, err := r.hook(nxt)
+		if prof != nil {
+			prof.Stop()
+		}
+		r.err = r.msg.WrapError(r.wrapError, err)
+		r.res = res
+		if err = r.reply(); err != nil {
+			r.dispatch.log.Warning("Error in reply: %s", err.Error())
+		}
 	}()
-
-	rp := <-ch
-	r.err = r.msg.WrapError(wrapError, rp.err)
-	r.res = rp.res
-	return
 }
 
 func (d *Dispatch) nextSeqid() int {
@@ -143,28 +145,30 @@ func (d *Dispatch) findServeHook(n string) (srv ServeHook, wrapError WrapErrorFu
 }
 
 func (d *Dispatch) dispatchCall(m Message) (err error) {
-	var name string
 	req := Request{msg: m, dispatch: d}
 
 	if err = m.Decode(&req.seqno); err != nil {
 		return
 	}
-	if err = m.Decode(&name); err != nil {
+	if err = m.Decode(&req.method); err != nil {
 		return
 	}
+	d.log.Info("Incoming call for '%s' (@%d)", req.method, req.seqno)
 
 	var se error
 	var wrapError WrapErrorFunc
-	if req.hook, wrapError, se = d.findServeHook(name); se != nil {
+	if req.hook, wrapError, se = d.findServeHook(req.method); se != nil {
+		d.log.Info("Server error: %s", se.Error())
 		req.err = m.WrapError(wrapError, se)
 		if err = m.decodeToNull(); err != nil {
 			return
 		}
+		err = req.reply()
 	} else {
-		req.serve(wrapError)
+		req.wrapError = wrapError
+		req.serve()
 	}
-
-	return req.reply()
+	return
 }
 
 func (d *Dispatch) RegisterProtocol(p Protocol) (err error) {
@@ -191,7 +195,7 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 	d.mutex.Unlock()
 
 	if call == nil {
-		d.Warn(fmt.Sprintf("Unexpected call; no sequence ID for %d", seqno))
+		d.log.Warning("Unexpected call; no sequence ID for %d", seqno)
 		err = m.decodeToNull()
 		return
 	}
@@ -226,10 +230,6 @@ func (d *Dispatch) Reset() error {
 	}
 	d.mutex.Unlock()
 	return nil
-}
-
-func (d *Dispatch) Warn(s string) {
-	d.warnFn(s)
 }
 
 func (d *Dispatch) Dispatch(m Message) (err error) {

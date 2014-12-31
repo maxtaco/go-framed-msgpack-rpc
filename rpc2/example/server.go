@@ -80,7 +80,8 @@ func ArithProtocol(i ArithInferface) rpc2.Protocol {
 
 func (s *Server) Run() (err error) {
 	var listener net.Listener
-	fmt.Printf("Listening on port %d...\n", port)
+	l := rpc2.NewSimpleLog()
+	l.Info("Listening on port %d...\n", port)
 	if listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)); err != nil {
 		return
 	}
@@ -89,8 +90,8 @@ func (s *Server) Run() (err error) {
 		if c, err = listener.Accept(); err != nil {
 			return
 		}
-		fmt.Printf("New connection from %v\n", c.RemoteAddr())
-		xp := rpc2.NewTransport(c, nil)
+		l.Info("New connection from %v\n", c.RemoteAddr())
+		xp := rpc2.NewTransport(c, l)
 		srv := rpc2.NewServer(xp, nil)
 		srv.Register(ArithProtocol(&ArithServer{c}))
 		srv.Run(true)
