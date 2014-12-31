@@ -91,7 +91,7 @@ func (s *Server) Run() (err error) {
 		}
 		fmt.Printf("New connection from %v\n", c.RemoteAddr())
 		xp := rpc2.NewTransport(c, nil)
-		srv := rpc2.NewServer(xp)
+		srv := rpc2.NewServer(xp, nil)
 		srv.Register(ArithProtocol(&ArithServer{c}))
 		srv.Run(true)
 	}

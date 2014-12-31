@@ -1,14 +1,16 @@
 package rpc2
 
 type Server struct {
-	xp *Transport
+	xp        *Transport
+	wrapError WrapErrorFunc
 }
 
-func NewServer(xp *Transport) *Server {
-	return &Server{xp}
+func NewServer(xp *Transport, f WrapErrorFunc) *Server {
+	return &Server{xp, f}
 }
 
 func (s *Server) Register(p Protocol) (err error) {
+	p.WrapError = s.wrapError
 	return s.xp.dispatcher.RegisterProtocol(p)
 }
 

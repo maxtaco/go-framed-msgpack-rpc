@@ -34,7 +34,7 @@ func (s *Client) Run() (err error) {
 	}
 
 	xp := rpc2.NewTransport(c, nil)
-	cli := ArithClient{rpc2.NewClient(xp)}
+	cli := ArithClient{rpc2.NewClient(xp, nil)}
 
 	for A := 10; A < 23; A += 2 {
 		var res int

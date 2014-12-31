@@ -3,7 +3,6 @@ package rpc2
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"github.com/ugorji/go/codec"
 	"io/ioutil"
 	"log"
@@ -18,18 +17,14 @@ type Transporter interface {
 	RawWrite([]byte) error
 	ReadByte() (byte, error)
 	Decode(interface{}) error
-	WrapError(error) interface{}
 	Encode(interface{}) error
-	UnwrapError(DecodeNext) (error, error)
 	GetDispatcher() (Dispatcher, error)
 	ReadLock()
 	ReadUnlock()
 }
 
 type TransportHooks struct {
-	wrapError   WrapErrorFunc
-	unwrapError UnwrapErrorFunc
-	warn        WarnFunc
+	warn WarnFunc
 }
 
 type ConPackage struct {
@@ -181,16 +176,6 @@ func (t *Transport) Encode(i interface{}) (err error) {
 	return t.RawWrite(v2)
 }
 
-func (t *Transport) WrapError(e error) interface{} {
-	if t.hooks != nil && t.hooks.wrapError != nil {
-		return t.hooks.wrapError(e)
-	} else if e == nil {
-		return nil
-	} else {
-		return e.Error()
-	}
-}
-
 func (t *Transport) getConPackage() (ret *ConPackage, err error) {
 	t.mutex.Lock()
 	ret = t.cpkg
@@ -214,16 +199,6 @@ func (t *Transport) Decode(i interface{}) (err error) {
 	if cp, err = t.getConPackage(); err == nil {
 		err = cp.dec.Decode(i)
 	}
-	return
-}
-
-func (t *Transport) UnwrapError(dnf DecodeNext) (app error, dispatch error) {
-	var s string
-	if t.hooks != nil && t.hooks.unwrapError != nil {
-		app, dispatch = t.hooks.unwrapError(dnf)
-	} else if dispatch = dnf(&s); dispatch == nil && len(s) > 0 {
-		app = errors.New(s)
-	} 
 	return
 }
 

@@ -1,6 +1,8 @@
 package rpc2
 
-import ()
+import (
+	"errors"
+)
 
 type Message struct {
 	t        Transporter
@@ -16,12 +18,23 @@ func (m *Message) Decode(i interface{}) (err error) {
 	return err
 }
 
-func (m *Message) WrapError(err error) interface{} {
-	return m.t.WrapError(err)
+func (m *Message) WrapError(f WrapErrorFunc, e error) interface{} {
+	if f != nil {
+		return f(e)
+	} else if e == nil {
+		return nil
+	} else {
+		return e.Error()
+	}
 }
 
-func (m *Message) DecodeError() (app error, dispatch error) {
-	app, dispatch = m.t.UnwrapError(m.makeDecodeNext())
+func (m *Message) DecodeError(f UnwrapErrorFunc) (app error, dispatch error) {
+	var s string
+	if f != nil {
+		app, dispatch = f(m.makeDecodeNext())
+	} else if dispatch = m.Decode(&s); dispatch == nil && len(s) > 0 {
+		app = errors.New(s)
+	}
 	return
 }
 

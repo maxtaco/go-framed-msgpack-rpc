@@ -12,7 +12,7 @@ type WarnFunc func(string)
 type Dispatcher interface {
 	Dispatch(m Message) error
 	Warn(string)
-	Call(name string, arg interface{}, res interface{}) error
+	Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) error
 	RegisterProtocol(Protocol) error
 	Reset() error
 }
@@ -28,8 +28,9 @@ type ClientResultPair struct {
 }
 
 type Protocol struct {
-	Name    string
-	Methods map[string]ServeHook
+	Name      string
+	Methods   map[string]ServeHook
+	WrapError WrapErrorFunc
 }
 
 type Dispatch struct {
@@ -62,16 +63,18 @@ type Request struct {
 }
 
 type Call struct {
-	ch    chan error
-	res   interface{}
-	seqid int
+	ch        chan error
+	seqid     int
+	res       interface{}
+	unwrapErr UnwrapErrorFunc
 }
 
-func NewCall(i int, res interface{}) *Call {
+func NewCall(i int, res interface{}, f UnwrapErrorFunc) *Call {
 	return &Call{
-		ch:    make(chan error),
-		res:   res,
-		seqid: i,
+		ch:        make(chan error),
+		seqid:     i,
+		res:       res,
+		unwrapErr: f,
 	}
 }
 
@@ -85,7 +88,7 @@ func (r *Request) reply() error {
 	return r.msg.Encode(v)
 }
 
-func (r *Request) serve() {
+func (r *Request) serve(wrapError WrapErrorFunc) {
 	ch := make(chan ResultPair)
 
 	go func() {
@@ -94,7 +97,7 @@ func (r *Request) serve() {
 	}()
 
 	rp := <-ch
-	r.err = r.msg.WrapError(rp.err)
+	r.err = r.msg.WrapError(wrapError, rp.err)
 	r.res = rp.res
 	return
 }
@@ -107,15 +110,15 @@ func (d *Dispatch) nextSeqid() int {
 	return ret
 }
 
-func (d *Dispatch) registerCall(seqid int, res interface{}) *Call {
-	ret := NewCall(seqid, res)
+func (d *Dispatch) registerCall(seqid int, res interface{}, f UnwrapErrorFunc) *Call {
+	ret := NewCall(seqid, res, f)
 	d.mutex.Lock()
 	d.calls[seqid] = ret
 	d.mutex.Unlock()
 	return ret
 }
 
-func (d *Dispatch) Call(name string, arg interface{}, res interface{}) (err error) {
+func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) (err error) {
 
 	seqid := d.nextSeqid()
 	v := []interface{}{TYPE_CALL, seqid, name, arg}
@@ -123,16 +126,18 @@ func (d *Dispatch) Call(name string, arg interface{}, res interface{}) (err erro
 	if err != nil {
 		return
 	}
-	err = <-d.registerCall(seqid, res).ch
+	err = <-d.registerCall(seqid, res, f).ch
 	return
 }
 
-func (d *Dispatch) findServeHook(n string) (srv ServeHook, err error) {
+func (d *Dispatch) findServeHook(n string) (srv ServeHook, wrapError WrapErrorFunc, err error) {
 	p, m := SplitMethodName(n)
 	if prot, found := d.protocols[p]; !found {
 		err = ProtocolNotFoundError{p}
 	} else if srv, found = prot.Methods[m]; !found {
 		err = MethodNotFoundError{p, m}
+	} else {
+		wrapError = prot.WrapError
 	}
 	return
 }
@@ -149,13 +154,14 @@ func (d *Dispatch) dispatchCall(m Message) (err error) {
 	}
 
 	var se error
-	if req.hook, se = d.findServeHook(name); se != nil {
-		req.err = m.WrapError(se)
+	var wrapError WrapErrorFunc
+	if req.hook, wrapError, se = d.findServeHook(name); se != nil {
+		req.err = m.WrapError(wrapError, se)
 		if err = m.decodeToNull(); err != nil {
 			return
 		}
 	} else {
-		req.serve()
+		req.serve(wrapError)
 	}
 
 	return req.reply()
@@ -192,7 +198,7 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 
 	var apperr error
 
-	if apperr, err = m.DecodeError(); err == nil {
+	if apperr, err = m.DecodeError(call.unwrapErr); err == nil {
 		var targ interface{}
 		if call.res != nil {
 			targ = call.res
