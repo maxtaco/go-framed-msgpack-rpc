@@ -193,7 +193,11 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 	var apperr error
 
 	if apperr, err = m.DecodeError(); err == nil {
-		err = m.Decode(call.res)
+		var targ interface{}
+		if call.res != nil {
+			targ = call.res
+		}
+		err = m.Decode(targ)
 	}
 
 	if err != nil {
