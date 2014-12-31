@@ -82,7 +82,6 @@ func (r *Request) reply() error {
 		r.err,
 		r.res,
 	}
-	fmt.Printf("doing reply ---> %v\n", v)
 	return r.msg.Encode(v)
 }
 
@@ -177,15 +176,12 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 	if err = m.Decode(&seqno); err != nil {
 		return
 	}
-	fmt.Printf("dispatching msg %d\n", seqno)
 
 	var call *Call
 	d.mutex.Lock()
-	fmt.Printf("ok, got lock....\n")
 	if call = d.calls[seqno]; call != nil {
 		delete(d.calls, seqno)
 	}
-	fmt.Printf("got call....%v\n", call)
 	d.mutex.Unlock()
 
 	if call == nil {
@@ -206,8 +202,6 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 			apperr = err
 		}
 	}
-
-	fmt.Printf("ok, snending it ... %v\n", apperr)
 
 	call.ch <- apperr
 

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"github.com/ugorji/go/codec"
 	"io/ioutil"
 	"log"
@@ -213,7 +212,6 @@ func (t *Transport) ReadByte() (b byte, err error) {
 func (t *Transport) Decode(i interface{}) (err error) {
 	var cp *ConPackage
 	if cp, err = t.getConPackage(); err == nil {
-		fmt.Printf("calling decode... %v\n", i)
 		err = cp.dec.Decode(i)
 	}
 	return
@@ -225,10 +223,7 @@ func (t *Transport) UnwrapError(dnf DecodeNext) (app error, dispatch error) {
 		app, dispatch = t.hooks.unwrapError(dnf)
 	} else if dispatch = dnf(&s); dispatch == nil && len(s) > 0 {
 		app = errors.New(s)
-	} else {
-		fmt.Printf("called decode once --> %v\n", s)
-
-	}
+	} 
 	return
 }
 
