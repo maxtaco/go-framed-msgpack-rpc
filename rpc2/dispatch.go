@@ -203,11 +203,12 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 	var apperr error
 
 	if apperr, err = m.DecodeError(call.unwrapErr); err == nil {
-		var targ interface{}
-		if call.res != nil {
-			targ = call.res
+		decode_to := call.res
+		if decode_to == nil {
+			var tmp interface{}
+			decode_to = &tmp
 		}
-		err = m.Decode(targ)
+		err = m.Decode(decode_to)
 	}
 
 	if err != nil {
