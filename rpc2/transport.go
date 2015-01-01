@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net"
 	"sync"
+	"io"
 )
 
 type WrapErrorFunc func(error) interface{}
@@ -24,8 +25,21 @@ type Transporter interface {
 
 type ConPackage struct {
 	con net.Conn
+	remoteAddr net.Addr
 	br  *bufio.Reader
 	dec *codec.Decoder
+}
+
+func AddrToString(addr net.Addr) string {
+	if addr == nil {
+		return "<not-connected>"
+	} else {
+		c := addr.String()
+		if len(c) == 0 {
+			c = "localhost"
+		}
+		return addr.Network() + "://" + c
+	}
 }
 
 func (c *ConPackage) ReadByte() (b byte, e error) {
@@ -39,6 +53,10 @@ func (c *ConPackage) Write(b []byte) (err error) {
 
 func (c *ConPackage) Close() error {
 	return c.con.Close()
+}
+
+func (c *ConPackage) GetRemoteAddr() net.Addr {
+	return c.remoteAddr
 }
 
 type Transport struct {
@@ -56,8 +74,10 @@ type Transport struct {
 
 func NewConPackage(c net.Conn, mh *codec.MsgpackHandle) *ConPackage {
 	br := bufio.NewReader(c)
+
 	return &ConPackage{
 		con: c,
+		remoteAddr : c.RemoteAddr(),
 		br:  br,
 		dec: codec.NewDecoder(br, mh),
 	}
@@ -68,6 +88,13 @@ func (t *Transport) IsConnected() bool {
 	ret := (t.cpkg != nil)
 	t.mutex.Unlock()
 	return ret
+}
+
+func (t *Transport) GetRemoteAddr() (ret net.Addr) {
+	if t.cpkg != nil {
+		ret = t.cpkg.GetRemoteAddr()
+	}
+	return
 }
 
 func NewTransport(c net.Conn, l Logger) *Transport {
@@ -111,7 +138,11 @@ func (t *Transport) handlePacketizerFailure(err error) {
 	// For now, just throw everything away.  Eventually we might
 	// want to make a plan for reconnecting.
 	t.mutex.Lock()
-	t.log.Warning(err.Error())
+	if err == io.EOF {
+		t.log.Info("EOF from %s\n", AddrToString(t.GetRemoteAddr()))
+	} else {
+		t.log.Warning(err.Error())
+	}
 	t.running = false
 	t.dispatcher.Reset()
 	t.dispatcher = nil

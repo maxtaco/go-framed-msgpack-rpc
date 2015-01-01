@@ -1,4 +1,3 @@
-
 package framed_msgpack_rpc
 
 //
@@ -7,30 +6,29 @@ package framed_msgpack_rpc
 //
 
 import (
-	"github.com/ugorji/go/codec"
 	"bufio"
+	"bytes"
+	"fmt"
+	"github.com/ugorji/go/codec"
 	"io"
 	"io/ioutil"
-	"sync"
 	"net/rpc"
-	"fmt"
-	"bytes"
+	"sync"
 )
-
 
 // -------------------------------------
 
 // rpcCodec defines the struct members and common methods.
 type rpcCodec struct {
-	rwc io.ReadWriteCloser
-	dec *codec.Decoder
-	enc *codec.Encoder
-	benc *codec.Encoder
-	bw  *bufio.Writer
-	br  *bufio.Reader
-	mu  sync.Mutex
-	cls bool
-	h   codec.Handle
+	rwc     io.ReadWriteCloser
+	dec     *codec.Decoder
+	enc     *codec.Encoder
+	benc    *codec.Encoder
+	bw      *bufio.Writer
+	br      *bufio.Reader
+	mu      sync.Mutex
+	cls     bool
+	h       codec.Handle
 	byteBuf *bytes.Buffer
 }
 
@@ -45,14 +43,14 @@ func newRPCCodec(conn io.ReadWriteCloser, h codec.Handle) rpcCodec {
 	br := bufio.NewReader(conn)
 	bb := new(bytes.Buffer)
 	return rpcCodec{
-		rwc: conn,
-		bw:  bw,
-		br:  br,
-		enc: codec.NewEncoder(bw, h),
-		dec: codec.NewDecoder(br, h),
-		benc : codec.NewEncoder(bb, h),
-		h:   h,
-		byteBuf : bb,
+		rwc:     conn,
+		bw:      bw,
+		br:      br,
+		enc:     codec.NewEncoder(bw, h),
+		dec:     codec.NewDecoder(br, h),
+		benc:    codec.NewEncoder(bb, h),
+		h:       h,
+		byteBuf: bb,
 	}
 }
 
@@ -113,9 +111,9 @@ func (c *msgpackSpecRpcCodec) framedWrite(obj interface{}) (err error) {
 
 	if c.cls {
 		return io.EOF
-	} else if _, err = c.bw.Write(b1) ; err != nil {
+	} else if _, err = c.bw.Write(b1); err != nil {
 		return err
-	} else if _, err = c.bw.Write(b2); err != nil  {
+	} else if _, err = c.bw.Write(b2); err != nil {
 		return err
 	} else {
 		err = c.bw.Flush()
@@ -234,5 +232,3 @@ func (x msgpackSpecRpc) ServerCodec(conn io.ReadWriteCloser, h codec.Handle, fra
 func (x msgpackSpecRpc) ClientCodec(conn io.ReadWriteCloser, h codec.Handle, framed bool) rpc.ClientCodec {
 	return &msgpackSpecRpcCodec{newRPCCodec(conn, h), framed}
 }
-
-
