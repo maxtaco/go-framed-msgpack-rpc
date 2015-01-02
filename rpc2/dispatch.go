@@ -2,7 +2,6 @@ package rpc2
 
 import (
 	"sync"
-	"fmt"
 )
 
 type DecodeNext func(interface{}) error
@@ -37,10 +36,10 @@ type Dispatch struct {
 	seqid     int
 	mutex     *sync.Mutex
 	xp        Transporter
-	log       Logger
+	log       LogInterface
 }
 
-func NewDispatch(xp Transporter, l Logger) *Dispatch {
+func NewDispatch(xp Transporter, l LogInterface) *Dispatch {
 	return &Dispatch{
 		protocols: make(map[string]Protocol),
 		calls:     make(map[int]*Call),
@@ -90,8 +89,8 @@ func (r *Request) reply() error {
 
 func (r *Request) serve() {
 	prof := r.dispatch.log.StartProfiler("serve %s", r.method)
-	nxt := r.msg.makeDecodeNext(func (v interface{}) {
-		r.dispatch.log.ServerCall(r.seqno, r.method, v, nil)
+	nxt := r.msg.makeDecodeNext(func(v interface{}) {
+		r.dispatch.log.ServerCall(r.seqno, r.method, nil, v)
 	})
 
 	go func() {
@@ -101,8 +100,10 @@ func (r *Request) serve() {
 		}
 		r.err = r.msg.WrapError(r.wrapError, err)
 		r.res = res
-		err = r.reply()
-		r.dispatch.log.ServerReply(r.seqno, r.method, r.err, r.res, err)
+		r.dispatch.log.ServerReply(r.seqno, r.method, err, r.res)
+		if err = r.reply(); err != nil {
+			r.dispatch.log.Warning("Reply error for %d: %s", r.seqno, err.Error())
+		}
 	}()
 }
 
@@ -163,7 +164,7 @@ func (d *Dispatch) dispatchCall(m Message) (err error) {
 		if err = m.decodeToNull(); err != nil {
 			return
 		}
-		d.log.ServerCall(req.seqno, res.method, nil, req.err)
+		d.log.ServerCall(req.seqno, req.method, se, nil)
 		err = req.reply()
 	} else {
 		req.wrapError = wrapError
@@ -196,7 +197,7 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 	d.mutex.Unlock()
 
 	if call == nil {
-		d.log.CallUnexpectedReply(seqno)
+		d.log.UnexpectedReply(seqno)
 		err = m.decodeToNull()
 		return
 	}

@@ -23,22 +23,10 @@ type Transporter interface {
 }
 
 type ConPackage struct {
-	con net.Conn
+	con        net.Conn
 	remoteAddr net.Addr
-	br  *bufio.Reader
-	dec *codec.Decoder
-}
-
-func AddrToString(addr net.Addr) string {
-	if addr == nil {
-		return "<not-connected>"
-	} else {
-		c := addr.String()
-		if len(c) == 0 {
-			c = "localhost"
-		}
-		return addr.Network() + "://" + c
-	}
+	br         *bufio.Reader
+	dec        *codec.Decoder
 }
 
 func (c *ConPackage) ReadByte() (b byte, e error) {
@@ -67,6 +55,7 @@ type Transport struct {
 	rdlck      *sync.Mutex
 	dispatcher Dispatcher
 	packetizer *Packetizer
+	log        LogInterface
 	running    bool
 }
 
@@ -74,10 +63,10 @@ func NewConPackage(c net.Conn, mh *codec.MsgpackHandle) *ConPackage {
 	br := bufio.NewReader(c)
 
 	return &ConPackage{
-		con: c,
-		remoteAddr : c.RemoteAddr(),
-		br:  br,
-		dec: codec.NewDecoder(br, mh),
+		con:        c,
+		remoteAddr: c.RemoteAddr(),
+		br:         br,
+		dec:        codec.NewDecoder(br, mh),
 	}
 }
 
@@ -95,11 +84,9 @@ func (t *Transport) GetRemoteAddr() (ret net.Addr) {
 	return
 }
 
-func NewTransport(c net.Conn, l Logger) *Transport {
+func NewTransport(c net.Conn, l LogFactory) *Transport {
 	var mh codec.MsgpackHandle
-	if l == nil {
-		l = NewSimpleLog()
-	}
+
 	buf := new(bytes.Buffer)
 	ret := &Transport{
 		mh:    &mh,
@@ -109,8 +96,12 @@ func NewTransport(c net.Conn, l Logger) *Transport {
 		mutex: new(sync.Mutex),
 		rdlck: new(sync.Mutex),
 	}
-	ret.log = l.NewConnection(ret.cpkg.GetRemoteAddr())
-	ret.dispatcher = NewDispatch(ret, l)
+	if l == nil {
+		l = NewSimpleLogFactory(nil, nil)
+	}
+	log := l.NewLog(ret.cpkg.GetRemoteAddr())
+	ret.log = log
+	ret.dispatcher = NewDispatch(ret, log)
 	ret.packetizer = NewPacketizer(ret.dispatcher, ret)
 	return ret
 }

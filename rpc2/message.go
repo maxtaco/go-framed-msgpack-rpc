@@ -31,7 +31,7 @@ func (m *Message) WrapError(f WrapErrorFunc, e error) interface{} {
 func (m *Message) DecodeError(f UnwrapErrorFunc) (app error, dispatch error) {
 	var s string
 	if f != nil {
-		app, dispatch = f(m.makeDecodeNext())
+		app, dispatch = f(m.makeDecodeNext(nil))
 	} else if dispatch = m.Decode(&s); dispatch == nil && len(s) > 0 {
 		app = errors.New(s)
 	}
@@ -51,12 +51,14 @@ func (m *Message) decodeToNull() error {
 	return err
 }
 
-func (m *Message) makeDecodeNext(debugHook func (interface{}) ) DecodeNext {
+func (m *Message) makeDecodeNext(debugHook func(interface{})) DecodeNext {
 	// Reserve the next object
 	m.t.ReadLock()
 	return func(i interface{}) error {
 		ret := m.Decode(i)
-		debugHook(i)
+		if debugHook != nil {
+			debugHook(i)
+		}
 		m.t.ReadUnlock()
 		return ret
 	}

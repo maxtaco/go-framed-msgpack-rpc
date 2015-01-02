@@ -33,13 +33,11 @@ type Client struct {
 
 func (s *Client) Run() (err error) {
 	var c net.Conn
-	l := rpc2.NewSimpleLog()
-	l.Info("Connecting to port %d...\n", port)
 	if c, err = net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port)); err != nil {
 		return
 	}
 
-	xp := rpc2.NewTransport(c, l)
+	xp := rpc2.NewTransport(c, nil)
 	cli := ArithClient{rpc2.NewClient(xp, nil)}
 
 	for A := 10; A < 23; A += 2 {
