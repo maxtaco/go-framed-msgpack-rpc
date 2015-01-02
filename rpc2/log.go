@@ -30,11 +30,11 @@ type LogFactory interface {
 }
 
 type LogOutput interface {
-	Error(s string)
-	Warning(s string)
-	Info(s string)
-	Debug(s string)
-	Profile(s string)
+	Error(s string, args ...interface{})
+	Warning(s string, args ...interface{})
+	Info(s string, args ...interface{})
+	Debug(s string, args ...interface{})
+	Profile(s string, args ...interface{})
 }
 
 type LogOptions interface {
@@ -55,19 +55,24 @@ type SimpleLogFactory struct {
 }
 
 type SimpleLog struct {
-	addr net.Addr
-	out  LogOutput
-	opts LogOptions
+	Addr net.Addr
+	Out  LogOutput
+	Opts LogOptions
 }
 
 type SimpleLogOutput struct{}
 type SimpleLogOptions struct{}
 
-func (so SimpleLogOutput) Info(s string)    { fmt.Fprintf(os.Stdout, "[I] %s\n", s) }
-func (so SimpleLogOutput) Error(s string)   { fmt.Fprintf(os.Stdout, "[E] %s\n", s) }
-func (so SimpleLogOutput) Debug(s string)   { fmt.Fprintf(os.Stdout, "[D] %s\n", s) }
-func (so SimpleLogOutput) Warning(s string) { fmt.Fprintf(os.Stdout, "[W] %s\n", s) }
-func (so SimpleLogOutput) Profile(s string) { fmt.Fprintf(os.Stdout, "[P] %s\n", s) }
+func (so SimpleLogOutput) log(ch string, fmts string, args []interface{}) {
+	fmts = fmt.Sprintf("[%s] %s\n", ch, fmts)
+	fmt.Fprintf(os.Stderr, fmts, args...)
+}
+
+func (s SimpleLogOutput) Info(fmt string, args ...interface{})    { s.log("I", fmt, args) }
+func (s SimpleLogOutput) Error(fmt string, args ...interface{})   { s.log("E", fmt, args) }
+func (s SimpleLogOutput) Debug(fmt string, args ...interface{})   { s.log("D", fmt, args) }
+func (s SimpleLogOutput) Warning(fmt string, args ...interface{}) { s.log("W", fmt, args) }
+func (s SimpleLogOutput) Profile(fmt string, args ...interface{}) { s.log("P", fmt, args) }
 
 func (so SimpleLogOptions) ShowAddress() bool    { return true }
 func (so SimpleLogOptions) ShowArg() bool        { return true }
@@ -108,38 +113,38 @@ func AddrToString(addr net.Addr) string {
 }
 
 func (l SimpleLog) TransportStart() {
-	if l.opts.TransportStart() {
-		l.out.Info(l.msg(true, "New connection"))
+	if l.Opts.TransportStart() {
+		l.Out.Info(l.msg(true, "New connection"))
 	}
 }
 
 func (l SimpleLog) TransportError(e error) {
 	if e != io.EOF {
-		l.out.Error(l.msg(true, "Error in transport: %s", e.Error()))
-	} else if l.opts.TransportStart() {
-		l.out.Info(l.msg(true, "EOF"))
+		l.Out.Error(l.msg(true, "Error in transport: %s", e.Error()))
+	} else if l.Opts.TransportStart() {
+		l.Out.Info(l.msg(true, "EOF"))
 	}
 	return
 }
 
 func (s SimpleLog) ServerReply(q int, meth string, err error, res interface{}) {
-	if s.opts.ServerTrace() {
-		s.trace("reply", "res", s.opts.ShowResult(), q, meth, err, res)
+	if s.Opts.ServerTrace() {
+		s.trace("reply", "res", s.Opts.ShowResult(), q, meth, err, res)
 	}
 }
 func (s SimpleLog) ServerCall(q int, meth string, err error, arg interface{}) {
-	if s.opts.ServerTrace() {
-		s.trace("serve", "arg", s.opts.ShowArg(), q, meth, err, arg)
+	if s.Opts.ServerTrace() {
+		s.trace("serve", "arg", s.Opts.ShowArg(), q, meth, err, arg)
 	}
 }
 func (s SimpleLog) ClientCall(q int, meth string, arg interface{}) {
-	if s.opts.ClientTrace() {
-		s.trace("call", "arg", s.opts.ShowArg(), q, meth, nil, arg)
+	if s.Opts.ClientTrace() {
+		s.trace("call", "arg", s.Opts.ShowArg(), q, meth, nil, arg)
 	}
 }
 func (s SimpleLog) ClientReply(q int, meth string, err error, res interface{}) {
-	if s.opts.ClientTrace() {
-		s.trace("reply", "res", s.opts.ShowResult(), q, meth, err, res)
+	if s.Opts.ClientTrace() {
+		s.trace("reply", "res", s.Opts.ShowResult(), q, meth, err, res)
 	}
 }
 
@@ -170,11 +175,11 @@ func (s SimpleLog) trace(which string, objname string, verbose bool, q int, meth
 		args = append(args, objname)
 		args = append(args, es)
 	}
-	s.out.Debug(s.msg(false, fmts, args...))
+	s.Out.Debug(s.msg(false, fmts, args...))
 }
 
 func (s SimpleLog) StartProfiler(format string, args ...interface{}) Profiler {
-	if s.opts.Profile() {
+	if s.Opts.Profile() {
 		return SimpleProfiler{
 			start: time.Now(),
 			msg:   fmt.Sprintf(format, args...),
@@ -186,17 +191,17 @@ func (s SimpleLog) StartProfiler(format string, args ...interface{}) Profiler {
 }
 
 func (s SimpleLog) UnexpectedReply(seqno int) {
-	s.out.Warning(s.msg(false, "Unexpected seqno %d in incoming reply", seqno))
+	s.Out.Warning(s.msg(false, "Unexpected seqno %d in incoming reply", seqno))
 }
 
 func (s SimpleLog) Warning(format string, args ...interface{}) {
-	s.out.Warning(s.msg(false, format, args...))
+	s.Out.Warning(s.msg(false, format, args...))
 }
 
 func (l SimpleLog) msg(force bool, format string, args ...interface{}) string {
 	m1 := fmt.Sprintf(format, args...)
-	if l.opts.ShowAddress() || force {
-		m2 := fmt.Sprintf("{%s} %s", AddrToString(l.addr), m1)
+	if l.Opts.ShowAddress() || force {
+		m2 := fmt.Sprintf("{%s} %s", AddrToString(l.Addr), m1)
 		m1 = m2
 	}
 	return m1
@@ -211,5 +216,5 @@ type SimpleProfiler struct {
 func (s SimpleProfiler) Stop() {
 	stop := time.Now()
 	diff := stop.Sub(s.start)
-	s.log.out.Profile(s.log.msg(false, "%s ran in %dms", s.msg, diff/time.Millisecond))
+	s.log.Out.Profile(s.log.msg(false, "%s ran in %dms", s.msg, diff/time.Millisecond))
 }
