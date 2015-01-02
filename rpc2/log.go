@@ -41,7 +41,10 @@ type LogOptions interface {
 	ShowAddress() bool
 	ShowArg() bool
 	ShowResult() bool
-	DoProfile() bool
+	Profile() bool
+	ClientTrace() bool
+	ServerTrace() bool
+	TransportStart() bool
 }
 
 //-------------------------------------------------
@@ -66,10 +69,13 @@ func (so SimpleLogOutput) Debug(s string)   { fmt.Fprintf(os.Stdout, "[D] %s\n",
 func (so SimpleLogOutput) Warning(s string) { fmt.Fprintf(os.Stdout, "[W] %s\n", s) }
 func (so SimpleLogOutput) Profile(s string) { fmt.Fprintf(os.Stdout, "[P] %s\n", s) }
 
-func (so SimpleLogOptions) ShowAddress() bool { return true }
-func (so SimpleLogOptions) ShowArg() bool     { return true }
-func (so SimpleLogOptions) ShowResult() bool  { return true }
-func (so SimpleLogOptions) DoProfile() bool   { return true }
+func (so SimpleLogOptions) ShowAddress() bool    { return true }
+func (so SimpleLogOptions) ShowArg() bool        { return true }
+func (so SimpleLogOptions) ShowResult() bool     { return true }
+func (so SimpleLogOptions) Profile() bool        { return true }
+func (so SimpleLogOptions) ClientTrace() bool    { return true }
+func (so SimpleLogOptions) ServerTrace() bool    { return true }
+func (so SimpleLogOptions) TransportStart() bool { return true }
 
 func NewSimpleLogFactory(out LogOutput, opts LogOptions) SimpleLogFactory {
 	if out == nil {
@@ -102,29 +108,39 @@ func AddrToString(addr net.Addr) string {
 }
 
 func (l SimpleLog) TransportStart() {
-	l.out.Info(l.msg(true, "New connection"))
+	if l.opts.TransportStart() {
+		l.out.Info(l.msg(true, "New connection"))
+	}
 }
 
 func (l SimpleLog) TransportError(e error) {
 	if e != io.EOF {
 		l.out.Error(l.msg(true, "Error in transport: %s", e.Error()))
-	} else {
+	} else if l.opts.TransportStart() {
 		l.out.Info(l.msg(true, "EOF"))
 	}
 	return
 }
 
 func (s SimpleLog) ServerReply(q int, meth string, err error, res interface{}) {
-	s.trace("reply", "res", s.opts.ShowResult(), q, meth, err, res)
+	if s.opts.ServerTrace() {
+		s.trace("reply", "res", s.opts.ShowResult(), q, meth, err, res)
+	}
 }
 func (s SimpleLog) ServerCall(q int, meth string, err error, arg interface{}) {
-	s.trace("serve", "arg", s.opts.ShowArg(), q, meth, err, arg)
+	if s.opts.ServerTrace() {
+		s.trace("serve", "arg", s.opts.ShowArg(), q, meth, err, arg)
+	}
 }
 func (s SimpleLog) ClientCall(q int, meth string, arg interface{}) {
-	s.trace("call", "arg", s.opts.ShowArg(), q, meth, nil, arg)
+	if s.opts.ClientTrace() {
+		s.trace("call", "arg", s.opts.ShowArg(), q, meth, nil, arg)
+	}
 }
 func (s SimpleLog) ClientReply(q int, meth string, err error, res interface{}) {
-	s.trace("reply", "res", s.opts.ShowResult(), q, meth, err, res)
+	if s.opts.ClientTrace() {
+		s.trace("reply", "res", s.opts.ShowResult(), q, meth, err, res)
+	}
 }
 
 func (s SimpleLog) trace(which string, objname string, verbose bool, q int, meth string, err error, obj interface{}) {
@@ -158,7 +174,7 @@ func (s SimpleLog) trace(which string, objname string, verbose bool, q int, meth
 }
 
 func (s SimpleLog) StartProfiler(format string, args ...interface{}) Profiler {
-	if s.opts.DoProfile() {
+	if s.opts.Profile() {
 		return SimpleProfiler{
 			start: time.Now(),
 			msg:   fmt.Sprintf(format, args...),
