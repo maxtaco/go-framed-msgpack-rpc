@@ -18,6 +18,8 @@ type LogInterface interface {
 	TransportError(error)
 	ServerCall(int, string, error, interface{})
 	ServerReply(int, string, error, interface{})
+	ClientCall(int, string, interface{})
+	ClientReply(int, string, error, interface{})
 	StartProfiler(format string, args ...interface{}) Profiler
 	UnexpectedReply(int)
 	Warning(format string, args ...interface{})
@@ -92,9 +94,10 @@ func AddrToString(addr net.Addr) string {
 	} else {
 		c := addr.String()
 		if len(c) == 0 {
-			c = "localhost"
+			return addr.Network()
+		} else {
+			return addr.Network() + "://" + c
 		}
-		return addr.Network() + "://" + c
 	}
 }
 
@@ -112,23 +115,35 @@ func (l SimpleLog) TransportError(e error) {
 }
 
 func (s SimpleLog) ServerReply(q int, meth string, err error, res interface{}) {
-	s.trace("reply", "result", s.opts.ShowResult(), q, meth, err, res)
+	s.trace("reply", "res", s.opts.ShowResult(), q, meth, err, res)
 }
-func (s SimpleLog) ServerCall(q int, meth string, err error, res interface{}) {
-	s.trace("call", "arg", s.opts.ShowArg(), q, meth, err, res)
+func (s SimpleLog) ServerCall(q int, meth string, err error, arg interface{}) {
+	s.trace("serve", "arg", s.opts.ShowArg(), q, meth, err, arg)
+}
+func (s SimpleLog) ClientCall(q int, meth string, arg interface{}) {
+	s.trace("call", "arg", s.opts.ShowArg(), q, meth, nil, arg)
+}
+func (s SimpleLog) ClientReply(q int, meth string, err error, res interface{}) {
+	s.trace("reply", "res", s.opts.ShowResult(), q, meth, err, res)
 }
 
 func (s SimpleLog) trace(which string, objname string, verbose bool, q int, meth string, err error, obj interface{}) {
-	fmts := "%s(%d): method=%s; err=%s"
+	args := []interface{}{which, q}
+	fmts := "%s(%d):"
+	if len(meth) > 0 {
+		fmts += " method=%s;"
+		args = append(args, meth)
+	}
+	fmts += " err=%s;"
 	var es string
 	if err == nil {
 		es = "null"
 	} else {
 		es = err.Error()
 	}
-	args := []interface{}{which, q, meth, es}
+	args = append(args, es)
 	if verbose {
-		fmts += "; %s=%s"
+		fmts += " %s=%s;"
 		eb, err := json.Marshal(obj)
 		var es string
 		if err != nil {

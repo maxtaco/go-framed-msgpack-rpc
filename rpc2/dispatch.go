@@ -62,19 +62,16 @@ type Request struct {
 }
 
 type Call struct {
-	ch        chan error
-	seqid     int
-	res       interface{}
-	unwrapErr UnwrapErrorFunc
+	ch          chan error
+	method      string
+	seqid       int
+	res         interface{}
+	unwrapError UnwrapErrorFunc
+	profiler    Profiler
 }
 
-func NewCall(i int, res interface{}, f UnwrapErrorFunc) *Call {
-	return &Call{
-		ch:        make(chan error),
-		seqid:     i,
-		res:       res,
-		unwrapErr: f,
-	}
+func (c *Call) Init() {
+	c.ch = make(chan error)
 }
 
 func (r *Request) reply() error {
@@ -115,12 +112,10 @@ func (d *Dispatch) nextSeqid() int {
 	return ret
 }
 
-func (d *Dispatch) registerCall(seqid int, res interface{}, f UnwrapErrorFunc) *Call {
-	ret := NewCall(seqid, res, f)
+func (d *Dispatch) registerCall(c *Call) {
 	d.mutex.Lock()
-	d.calls[seqid] = ret
+	d.calls[c.seqid] = c
 	d.mutex.Unlock()
-	return ret
 }
 
 func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) (err error) {
@@ -131,7 +126,18 @@ func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 	if err != nil {
 		return
 	}
-	err = <-d.registerCall(seqid, res, f).ch
+	d.log.ClientCall(seqid, name, arg)
+	profiler := d.log.StartProfiler("call %s", name)
+	call := &Call{
+		method:      name,
+		seqid:       seqid,
+		res:         res,
+		unwrapError: f,
+		profiler:    profiler,
+	}
+	call.Init()
+	d.registerCall(call)
+	err = <-call.ch
 	return
 }
 
@@ -204,13 +210,20 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 
 	var apperr error
 
-	if apperr, err = m.DecodeError(call.unwrapErr); err == nil {
+	if call.profiler != nil {
+		call.profiler.Stop()
+	}
+
+	if apperr, err = m.DecodeError(call.unwrapError); err == nil {
 		decode_to := call.res
 		if decode_to == nil {
 			var tmp interface{}
 			decode_to = &tmp
 		}
 		err = m.Decode(decode_to)
+		d.log.ClientReply(seqno, call.method, err, decode_to)
+	} else {
+		d.log.ClientReply(seqno, call.method, err, nil)
 	}
 
 	if err != nil {
