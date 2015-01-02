@@ -32,6 +32,7 @@ type LogOutput interface {
 	Warning(s string)
 	Info(s string)
 	Debug(s string)
+	Profile(s string)
 }
 
 type LogOptions interface {
@@ -61,6 +62,7 @@ func (so SimpleLogOutput) Info(s string)    { fmt.Fprintf(os.Stdout, "[I] %s\n",
 func (so SimpleLogOutput) Error(s string)   { fmt.Fprintf(os.Stdout, "[E] %s\n", s) }
 func (so SimpleLogOutput) Debug(s string)   { fmt.Fprintf(os.Stdout, "[D] %s\n", s) }
 func (so SimpleLogOutput) Warning(s string) { fmt.Fprintf(os.Stdout, "[W] %s\n", s) }
+func (so SimpleLogOutput) Profile(s string) { fmt.Fprintf(os.Stdout, "[P] %s\n", s) }
 
 func (so SimpleLogOptions) ShowAddress() bool { return true }
 func (so SimpleLogOptions) ShowArg() bool     { return true }
@@ -117,7 +119,7 @@ func (s SimpleLog) ServerCall(q int, meth string, err error, res interface{}) {
 }
 
 func (s SimpleLog) trace(which string, objname string, verbose bool, q int, meth string, err error, obj interface{}) {
-	fmts := "%s<%d>: method=%s; err=%s"
+	fmts := "%s(%d): method=%s; err=%s"
 	var es string
 	if err == nil {
 		es = "null"
@@ -178,5 +180,5 @@ type SimpleProfiler struct {
 func (s SimpleProfiler) Stop() {
 	stop := time.Now()
 	diff := stop.Sub(s.start)
-	s.log.out.Info(s.log.msg(false, "[P] %s ran in %dms", s.msg, diff/time.Millisecond))
+	s.log.out.Profile(s.log.msg(false, "%s ran in %dms", s.msg, diff/time.Millisecond))
 }
