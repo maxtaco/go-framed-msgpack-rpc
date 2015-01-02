@@ -2,10 +2,38 @@ package rpc2
 
 import (
 	"fmt"
-	"github.com/op/go-logging"
 	"os"
 	"time"
+	"io"
 )
+
+type Profiler interface {
+	Stop()
+}
+
+type LogEngine interface {
+	TransportLifetime(string)
+	TransportError(string)
+	ServerTrace(string, interface{})
+	ServerError(string)
+	StartProfiler(string) Profiler
+	ClientTrace(string, interface{})
+	ClientError(string)
+
+	ShowAddress() bool
+}
+
+type Log struct {
+	eng LogEngine	
+}
+
+type LogInterface interface {
+	TransportStart()
+	TransportError(error)
+	ServerCall(int, string, interface{}, error)
+	ServerReply(int, string, error, interface{}, error)
+	UnexpectedReply(int)
+}
 
 type Logger interface {
 	Critical(format string, args ...interface{})
@@ -16,9 +44,6 @@ type Logger interface {
 	StartProfiler(format string, args ...interface{}) Profiler
 }
 
-type Profiler interface {
-	Stop()
-}
 
 type SimpleLog struct {
 	logging.Logger

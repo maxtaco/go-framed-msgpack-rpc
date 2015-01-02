@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"net"
 	"sync"
-	"io"
 )
 
 type WrapErrorFunc func(error) interface{}
@@ -60,7 +59,6 @@ func (c *ConPackage) GetRemoteAddr() net.Addr {
 }
 
 type Transport struct {
-	log        Logger
 	mh         *codec.MsgpackHandle
 	cpkg       *ConPackage
 	buf        *bytes.Buffer
@@ -104,7 +102,6 @@ func NewTransport(c net.Conn, l Logger) *Transport {
 	}
 	buf := new(bytes.Buffer)
 	ret := &Transport{
-		log:   l,
 		mh:    &mh,
 		cpkg:  NewConPackage(c, &mh),
 		buf:   buf,
@@ -112,6 +109,7 @@ func NewTransport(c net.Conn, l Logger) *Transport {
 		mutex: new(sync.Mutex),
 		rdlck: new(sync.Mutex),
 	}
+	ret.log = l.NewConnection(ret.cpkg.GetRemoteAddr())
 	ret.dispatcher = NewDispatch(ret, l)
 	ret.packetizer = NewPacketizer(ret.dispatcher, ret)
 	return ret
@@ -138,11 +136,7 @@ func (t *Transport) handlePacketizerFailure(err error) {
 	// For now, just throw everything away.  Eventually we might
 	// want to make a plan for reconnecting.
 	t.mutex.Lock()
-	if err == io.EOF {
-		t.log.Info("EOF from %s\n", AddrToString(t.GetRemoteAddr()))
-	} else {
-		t.log.Warning(err.Error())
-	}
+	t.log.TransportError(err)
 	t.running = false
 	t.dispatcher.Reset()
 	t.dispatcher = nil

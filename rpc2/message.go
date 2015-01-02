@@ -51,11 +51,12 @@ func (m *Message) decodeToNull() error {
 	return err
 }
 
-func (m *Message) makeDecodeNext() DecodeNext {
+func (m *Message) makeDecodeNext(debugHook func (interface{}) ) DecodeNext {
 	// Reserve the next object
 	m.t.ReadLock()
 	return func(i interface{}) error {
 		ret := m.Decode(i)
+		debugHook(i)
 		m.t.ReadUnlock()
 		return ret
 	}

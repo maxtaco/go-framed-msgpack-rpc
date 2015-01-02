@@ -2,6 +2,7 @@ package rpc2
 
 import (
 	"sync"
+	"fmt"
 )
 
 type DecodeNext func(interface{}) error
@@ -89,7 +90,9 @@ func (r *Request) reply() error {
 
 func (r *Request) serve() {
 	prof := r.dispatch.log.StartProfiler("serve %s", r.method)
-	nxt := r.msg.makeDecodeNext()
+	nxt := r.msg.makeDecodeNext(func (v interface{}) {
+		r.dispatch.log.ServerCall(r.seqno, r.method, v, nil)
+	})
 
 	go func() {
 		res, err := r.hook(nxt)
@@ -98,9 +101,8 @@ func (r *Request) serve() {
 		}
 		r.err = r.msg.WrapError(r.wrapError, err)
 		r.res = res
-		if err = r.reply(); err != nil {
-			r.dispatch.log.Warning("Error in reply: %s", err.Error())
-		}
+		err = r.reply()
+		r.dispatch.log.ServerReply(r.seqno, r.method, r.err, r.res, err)
 	}()
 }
 
@@ -153,16 +155,15 @@ func (d *Dispatch) dispatchCall(m Message) (err error) {
 	if err = m.Decode(&req.method); err != nil {
 		return
 	}
-	d.log.Info("Incoming call for '%s' (@%d)", req.method, req.seqno)
 
 	var se error
 	var wrapError WrapErrorFunc
 	if req.hook, wrapError, se = d.findServeHook(req.method); se != nil {
-		d.log.Info("Server error: %s", se.Error())
 		req.err = m.WrapError(wrapError, se)
 		if err = m.decodeToNull(); err != nil {
 			return
 		}
+		d.log.ServerCall(req.seqno, res.method, nil, req.err)
 		err = req.reply()
 	} else {
 		req.wrapError = wrapError
@@ -195,7 +196,7 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 	d.mutex.Unlock()
 
 	if call == nil {
-		d.log.Warning("Unexpected call; no sequence ID for %d", seqno)
+		d.log.CallUnexpectedReply(seqno)
 		err = m.decodeToNull()
 		return
 	}
