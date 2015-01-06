@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"net"
 	"sync"
+	"encoding/hex"
+	"fmt"
 )
 
 type WrapErrorFunc func(error) interface{}
@@ -165,6 +167,7 @@ func (t *Transport) Encode(i interface{}) (err error) {
 		return
 	}
 	l := len(v2)
+	fmt.Printf("encoded -> %s\n", hex.EncodeToString(v2))
 	if v1, err = t.encodeToBytes(l); err != nil {
 		return
 	}
