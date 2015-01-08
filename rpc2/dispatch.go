@@ -143,11 +143,14 @@ func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 
 func (d *Dispatch) findServeHook(n string) (srv ServeHook, wrapError WrapErrorFunc, err error) {
 	p, m := SplitMethodName(n)
-	if prot, found := d.protocols[p]; !found {
+	var prot Protocol
+	var found bool
+	if prot, found = d.protocols[p]; !found {
 		err = ProtocolNotFoundError{p}
 	} else if srv, found = prot.Methods[m]; !found {
 		err = MethodNotFoundError{p, m}
-	} else {
+	}
+	if found {
 		wrapError = prot.WrapError
 	}
 	return

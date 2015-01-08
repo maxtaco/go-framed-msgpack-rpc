@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"net"
 	"sync"
-	"encoding/hex"
 )
 
 type WrapErrorFunc func(error) interface{}
