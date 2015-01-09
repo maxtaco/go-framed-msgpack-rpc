@@ -37,9 +37,10 @@ type Dispatch struct {
 	mutex     *sync.Mutex
 	xp        Transporter
 	log       LogInterface
+	wrapError WrapErrorFunc
 }
 
-func NewDispatch(xp Transporter, l LogInterface) *Dispatch {
+func NewDispatch(xp Transporter, l LogInterface, wef WrapErrorFunc) *Dispatch {
 	return &Dispatch{
 		protocols: make(map[string]Protocol),
 		calls:     make(map[int]*Call),
@@ -47,6 +48,7 @@ func NewDispatch(xp Transporter, l LogInterface) *Dispatch {
 		mutex:     new(sync.Mutex),
 		xp:        xp,
 		log:       l,
+		wrapError: wef,
 	}
 }
 
@@ -152,6 +154,9 @@ func (d *Dispatch) findServeHook(n string) (srv ServeHook, wrapError WrapErrorFu
 	}
 	if found {
 		wrapError = prot.WrapError
+	}
+	if wrapError == nil {
+		wrapError = d.wrapError
 	}
 	return
 }

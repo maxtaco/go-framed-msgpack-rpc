@@ -57,6 +57,7 @@ type Transport struct {
 	packetizer *Packetizer
 	log        LogInterface
 	running    bool
+	wrapError  WrapErrorFunc
 }
 
 func NewConPackage(c net.Conn, mh *codec.MsgpackHandle) *ConPackage {
@@ -84,24 +85,25 @@ func (t *Transport) GetRemoteAddr() (ret net.Addr) {
 	return
 }
 
-func NewTransport(c net.Conn, l LogFactory) *Transport {
+func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *Transport {
 	var mh codec.MsgpackHandle
 
 	buf := new(bytes.Buffer)
 	ret := &Transport{
-		mh:    &mh,
-		cpkg:  NewConPackage(c, &mh),
-		buf:   buf,
-		enc:   codec.NewEncoder(buf, &mh),
-		mutex: new(sync.Mutex),
-		rdlck: new(sync.Mutex),
+		mh:        &mh,
+		cpkg:      NewConPackage(c, &mh),
+		buf:       buf,
+		enc:       codec.NewEncoder(buf, &mh),
+		mutex:     new(sync.Mutex),
+		rdlck:     new(sync.Mutex),
+		wrapError: wef,
 	}
 	if l == nil {
 		l = NewSimpleLogFactory(nil, nil)
 	}
 	log := l.NewLog(ret.cpkg.GetRemoteAddr())
 	ret.log = log
-	ret.dispatcher = NewDispatch(ret, log)
+	ret.dispatcher = NewDispatch(ret, log, wef)
 	ret.packetizer = NewPacketizer(ret.dispatcher, ret)
 	return ret
 }
