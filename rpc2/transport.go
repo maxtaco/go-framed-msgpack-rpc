@@ -53,6 +53,7 @@ type Transport struct {
 	enc        *codec.Encoder
 	mutex      *sync.Mutex
 	rdlck      *sync.Mutex
+	wrlck      *sync.Mutex
 	dispatcher Dispatcher
 	packetizer *Packetizer
 	log        LogInterface
@@ -96,6 +97,7 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *Transport {
 		enc:       codec.NewEncoder(buf, &mh),
 		mutex:     new(sync.Mutex),
 		rdlck:     new(sync.Mutex),
+		wrlck:     new(sync.Mutex),
 		wrapError: wef,
 	}
 	if l == nil {
@@ -162,6 +164,9 @@ func (t *Transport) run(bg bool) (err error) {
 }
 
 func (t *Transport) Encode(i interface{}) (err error) {
+	t.wrlck.Lock()
+	defer t.wrlck.Unlock()
+
 	var v1, v2 []byte
 	if v2, err = t.encodeToBytes(i); err != nil {
 		return
