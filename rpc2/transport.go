@@ -87,7 +87,7 @@ func (t *Transport) GetRemoteAddr() (ret net.Addr) {
 }
 
 func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *Transport {
-	mh := codec.MsgpackHandle{WriteExt : true}
+	mh := codec.MsgpackHandle{WriteExt: true}
 
 	buf := new(bytes.Buffer)
 	ret := &Transport{

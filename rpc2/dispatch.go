@@ -31,24 +31,24 @@ type Protocol struct {
 }
 
 type Dispatch struct {
-	protocols map[string]Protocol
-	calls     map[int]*Call
-	seqid     int
-	mutex     *sync.Mutex
-	xp        Transporter
-	log       LogInterface
-	wrapError WrapErrorFunc
+	protocols  map[string]Protocol
+	calls      map[int]*Call
+	seqid      int
+	callsMutex *sync.Mutex
+	xp         Transporter
+	log        LogInterface
+	wrapError  WrapErrorFunc
 }
 
 func NewDispatch(xp Transporter, l LogInterface, wef WrapErrorFunc) *Dispatch {
 	return &Dispatch{
-		protocols: make(map[string]Protocol),
-		calls:     make(map[int]*Call),
-		seqid:     0,
-		mutex:     new(sync.Mutex),
-		xp:        xp,
-		log:       l,
-		wrapError: wef,
+		protocols:  make(map[string]Protocol),
+		calls:      make(map[int]*Call),
+		seqid:      0,
+		callsMutex: new(sync.Mutex),
+		xp:         xp,
+		log:        l,
+		wrapError:  wef,
 	}
 }
 
@@ -107,20 +107,26 @@ func (r *Request) serve() {
 }
 
 func (d *Dispatch) nextSeqid() int {
-	d.mutex.Lock()
 	ret := d.seqid
 	d.seqid++
-	d.mutex.Unlock()
 	return ret
 }
 
 func (d *Dispatch) registerCall(c *Call) {
-	d.mutex.Lock()
 	d.calls[c.seqid] = c
-	d.mutex.Unlock()
 }
 
 func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) (err error) {
+
+	d.callsMutex.Lock()
+	locked := true
+	unlock := func() {
+		if locked {
+			locked = false
+			d.callsMutex.Unlock()
+		}
+	}
+	defer unlock()
 
 	seqid := d.nextSeqid()
 	v := []interface{}{TYPE_CALL, seqid, name, arg}
@@ -139,6 +145,8 @@ func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 	}
 	call.Init()
 	d.registerCall(call)
+	unlock()
+
 	err = <-call.ch
 	return
 }
@@ -203,12 +211,12 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 		return
 	}
 
+	d.callsMutex.Lock()
 	var call *Call
-	d.mutex.Lock()
 	if call = d.calls[seqno]; call != nil {
 		delete(d.calls, seqno)
 	}
-	d.mutex.Unlock()
+	d.callsMutex.Unlock()
 
 	if call == nil {
 		d.log.UnexpectedReply(seqno)
@@ -247,12 +255,12 @@ func (d *Dispatch) dispatchResponse(m Message) (err error) {
 }
 
 func (d *Dispatch) Reset() error {
-	d.mutex.Lock()
+	d.callsMutex.Lock()
 	for k, v := range d.calls {
 		v.ch <- EofError{}
 		delete(d.calls, k)
 	}
-	d.mutex.Unlock()
+	d.callsMutex.Unlock()
 	return nil
 }
 
