@@ -9,11 +9,12 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/ugorji/go/codec"
 	"io"
 	"io/ioutil"
 	"net/rpc"
 	"sync"
+
+	"github.com/ugorji/go/codec"
 )
 
 // -------------------------------------
@@ -38,11 +39,11 @@ func (c *rpcCodec) encodeToBytes(obj interface{}) []byte {
 	return b
 }
 
-func newRPCCodec(conn io.ReadWriteCloser, h codec.Handle) rpcCodec {
+func newRPCCodec(conn io.ReadWriteCloser, h codec.Handle) *rpcCodec {
 	bw := bufio.NewWriter(conn)
 	br := bufio.NewReader(conn)
 	bb := new(bytes.Buffer)
-	return rpcCodec{
+	return &rpcCodec{
 		rwc:     conn,
 		bw:      bw,
 		br:      br,
@@ -100,7 +101,7 @@ func (c *rpcCodec) ReadResponseBody(body interface{}) error {
 //--------------------------------------------------
 
 type msgpackSpecRpcCodec struct {
-	rpcCodec
+	*rpcCodec
 	framed bool
 }
 

@@ -1,14 +1,12 @@
 package rpc2
 
-import (
-	"sync"
-)
+import "sync"
 
 type DecodeNext func(interface{}) error
 type ServeHook func(DecodeNext) (interface{}, error)
 
 type Dispatcher interface {
-	Dispatch(m Message) error
+	Dispatch(m *Message) error
 	Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) error
 	RegisterProtocol(Protocol) error
 	Reset() error
@@ -53,7 +51,7 @@ func NewDispatch(xp Transporter, l LogInterface, wef WrapErrorFunc) *Dispatch {
 }
 
 type Request struct {
-	msg       Message
+	msg       *Message
 	dispatch  *Dispatch
 	seqno     int
 	method    string
@@ -130,11 +128,6 @@ func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 
 	seqid := d.nextSeqid()
 	v := []interface{}{TYPE_CALL, seqid, name, arg}
-	err = d.xp.Encode(v)
-	if err != nil {
-		return
-	}
-	d.log.ClientCall(seqid, name, arg)
 	profiler := d.log.StartProfiler("call %s", name)
 	call := &Call{
 		method:      name,
@@ -146,7 +139,11 @@ func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 	call.Init()
 	d.registerCall(call)
 	unlock()
-
+	err = d.xp.Encode(v)
+	if err != nil {
+		return
+	}
+	d.log.ClientCall(seqid, name, arg)
 	err = <-call.ch
 	return
 }
@@ -169,7 +166,7 @@ func (d *Dispatch) findServeHook(n string) (srv ServeHook, wrapError WrapErrorFu
 	return
 }
 
-func (d *Dispatch) dispatchCall(m Message) (err error) {
+func (d *Dispatch) dispatchCall(m *Message) (err error) {
 	req := Request{msg: m, dispatch: d}
 
 	if err = m.Decode(&req.seqno); err != nil {
@@ -204,7 +201,7 @@ func (d *Dispatch) RegisterProtocol(p Protocol) (err error) {
 	return err
 }
 
-func (d *Dispatch) dispatchResponse(m Message) (err error) {
+func (d *Dispatch) dispatchResponse(m *Message) (err error) {
 	var seqno int
 
 	if err = m.Decode(&seqno); err != nil {
@@ -264,7 +261,7 @@ func (d *Dispatch) Reset() error {
 	return nil
 }
 
-func (d *Dispatch) Dispatch(m Message) (err error) {
+func (d *Dispatch) Dispatch(m *Message) (err error) {
 	if m.nFields == 4 {
 		err = d.dispatchQuad(m)
 	} else {
@@ -273,7 +270,7 @@ func (d *Dispatch) Dispatch(m Message) (err error) {
 	return
 }
 
-func (d *Dispatch) dispatchQuad(m Message) (err error) {
+func (d *Dispatch) dispatchQuad(m *Message) (err error) {
 	var l int
 	if err = m.Decode(&l); err != nil {
 		return
