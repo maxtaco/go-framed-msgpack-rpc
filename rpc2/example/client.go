@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/maxtaco/go-framed-msgpack-rpc/rpc2"
 	"net"
+
+	"github.com/maxtaco/go-framed-msgpack-rpc/rpc2"
 )
 
 type GenericClient interface {
@@ -37,7 +38,7 @@ func (s *Client) Run() (err error) {
 		return
 	}
 
-	xp := rpc2.NewTransport(c, nil)
+	xp := rpc2.NewTransport(c, nil, nil)
 	cli := ArithClient{rpc2.NewClient(xp, nil)}
 
 	for A := 10; A < 23; A += 2 {

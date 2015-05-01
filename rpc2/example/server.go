@@ -3,8 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/maxtaco/go-framed-msgpack-rpc/rpc2"
 	"net"
+
+	"github.com/maxtaco/go-framed-msgpack-rpc/rpc2"
 )
 
 type Server struct {
@@ -91,7 +92,7 @@ func (s *Server) Run() (err error) {
 		if c, err = listener.Accept(); err != nil {
 			return
 		}
-		xp := rpc2.NewTransport(c, lf)
+		xp := rpc2.NewTransport(c, lf, nil)
 		srv := rpc2.NewServer(xp, nil)
 		srv.Register(ArithProtocol(&ArithServer{c}))
 		srv.Run(true)
