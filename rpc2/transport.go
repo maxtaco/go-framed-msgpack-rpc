@@ -88,13 +88,17 @@ func (t *Transport) GetRemoteAddr() (ret net.Addr) {
 
 func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *Transport {
 	mh := codec.MsgpackHandle{WriteExt: true}
+	return NewTransportWithCodec(c, &mh, l, wef)
+}
+
+func NewTransportWithCodec(c net.Conn, mh *codec.MsgpackHandle, l LogFactory, wef WrapErrorFunc) *Transport {
 
 	buf := new(bytes.Buffer)
 	ret := &Transport{
-		mh:        &mh,
-		cpkg:      NewConPackage(c, &mh),
+		mh:        mh,
+		cpkg:      NewConPackage(c, mh),
 		buf:       buf,
-		enc:       codec.NewEncoder(buf, &mh),
+		enc:       codec.NewEncoder(buf, mh),
 		mutex:     new(sync.Mutex),
 		rdlck:     new(sync.Mutex),
 		wrlck:     new(sync.Mutex),
