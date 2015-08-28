@@ -117,14 +117,6 @@ func (d *Dispatch) registerCall(c *Call) {
 func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) (err error) {
 
 	d.callsMutex.Lock()
-	locked := true
-	unlock := func() {
-		if locked {
-			locked = false
-			d.callsMutex.Unlock()
-		}
-	}
-	defer unlock()
 
 	seqid := d.nextSeqid()
 	v := []interface{}{TYPE_CALL, seqid, name, arg}
@@ -138,7 +130,9 @@ func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 	}
 	call.Init()
 	d.registerCall(call)
-	unlock()
+
+	d.callsMutex.Unlock()
+
 	err = d.xp.Encode(v)
 	if err != nil {
 		return

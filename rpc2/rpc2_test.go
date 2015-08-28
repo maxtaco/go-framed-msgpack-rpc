@@ -1,11 +1,10 @@
-
 package rpc2
 
 import (
-	"github.com/ugorji/go/codec"
-	"encoding/hex"
-	"testing"
 	"bytes"
+	"encoding/hex"
+	"github.com/ugorji/go/codec"
+	"testing"
 )
 
 // Test an output from objective C that was breaking the server
@@ -18,7 +17,7 @@ func TestObjcOutput(t *testing.T) {
 
 	buf := bytes.NewBuffer(v)
 	var i int
-	mh := codec.MsgpackHandle{WriteExt : true}
+	mh := codec.MsgpackHandle{WriteExt: true}
 	dec := codec.NewDecoder(buf, &mh)
 	err = dec.Decode(&i)
 	if err != nil {
