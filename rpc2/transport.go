@@ -131,7 +131,6 @@ func (t *Transport) handlePacketizerFailure(err error) {
 	// For now, just throw everything away.  Eventually we might
 	// want to make a plan for reconnecting.
 	t.mutex.Lock()
-	t.log.TransportError(err)
 	t.running = false
 	t.dispatcher.Reset()
 	t.dispatcher = nil
@@ -140,6 +139,11 @@ func (t *Transport) handlePacketizerFailure(err error) {
 	t.cpkg.Close()
 	t.cpkg = nil
 	t.mutex.Unlock()
+	// NOTE: The logging implementation can be anything. In particular, it
+	// might try to send logs over this transport, which would take the mutex
+	// again. We *must not* call this while we hold the lock. (Yes, we figured
+	// this out by deadlocking ourselves :p)
+	t.log.TransportError(err)
 	return
 }
 
