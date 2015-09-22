@@ -12,16 +12,6 @@ type Dispatcher interface {
 	Reset() error
 }
 
-type ResultPair struct {
-	res interface{}
-	err error
-}
-
-type ClientResultPair struct {
-	nxt DecodeNext
-	err error
-}
-
 type Protocol struct {
 	Name      string
 	Methods   map[string]ServeHook
