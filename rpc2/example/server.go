@@ -9,6 +9,7 @@ import (
 )
 
 type Server struct {
+	port int
 }
 
 type ArithServer struct {
@@ -79,14 +80,15 @@ func ArithProtocol(i ArithInferface) rpc2.Protocol {
 // end autogen code
 //---------------------------------------------------------------
 
-func (s *Server) Run() (err error) {
+func (s *Server) Run(ready chan struct{}) (err error) {
 	var listener net.Listener
 	o := rpc2.SimpleLogOutput{}
 	lf := rpc2.NewSimpleLogFactory(o, nil)
-	o.Info(fmt.Sprintf("Listening on port %d...", port))
-	if listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)); err != nil {
+	o.Info(fmt.Sprintf("Listening on port %d...", s.port))
+	if listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", s.port)); err != nil {
 		return
 	}
+	close(ready)
 	for {
 		var c net.Conn
 		if c, err = listener.Accept(); err != nil {

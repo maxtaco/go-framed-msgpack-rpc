@@ -23,10 +23,10 @@ type Transporter interface {
 }
 
 type ConPackage struct {
+	Decoder
 	con        net.Conn
 	remoteAddr net.Addr
 	br         *bufio.Reader
-	dec        *codec.Decoder
 }
 
 func (c *ConPackage) ReadByte() (b byte, e error) {
@@ -68,7 +68,7 @@ func NewConPackage(c net.Conn, mh *codec.MsgpackHandle) *ConPackage {
 		con:        c,
 		remoteAddr: c.RemoteAddr(),
 		br:         br,
-		dec:        codec.NewDecoder(br, mh),
+		Decoder:    codec.NewDecoder(br, mh),
 	}
 }
 
@@ -206,7 +206,7 @@ func (t *Transport) ReadByte() (b byte, err error) {
 func (t *Transport) Decode(i interface{}) (err error) {
 	var cp *ConPackage
 	if cp, err = t.getConPackage(); err == nil {
-		err = cp.dec.Decode(i)
+		err = cp.Decode(i)
 	}
 	return
 }

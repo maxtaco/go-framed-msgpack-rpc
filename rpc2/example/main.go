@@ -14,19 +14,14 @@ func init() {
 	flag.IntVar(&port, "p", 8022, "specify a port (8022 by default)")
 }
 
-type Command interface {
-	Run() error
-}
-
 func main() {
 	flag.Parse()
-	var cmd Command
+	var err error
 	if server {
-		cmd = &Server{}
+		err = (&Server{port: port}).Run(make(chan struct{}))
 	} else {
-		cmd = &Client{}
+		err = (&Client{port: port}).Run()
 	}
-	err := cmd.Run()
 	if err != nil {
 		log.Printf("Error: %s", err.Error())
 		os.Exit(-2)
