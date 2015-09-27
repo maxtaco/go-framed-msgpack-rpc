@@ -11,6 +11,7 @@ func NewClient(xp Transporter, f UnwrapErrorFunc) *Client {
 
 func (c *Client) Call(method string, arg interface{}, res interface{}) (err error) {
 	var d Dispatcher
+	c.xp.Run(true)
 	if d, err = c.xp.GetDispatcher(); err == nil {
 		err = d.Call(method, arg, res, c.unwrapError)
 	}
