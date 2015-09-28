@@ -11,7 +11,7 @@ func NewServer(xp Transporter, f WrapErrorFunc) *Server {
 
 func (s *Server) Register(p Protocol) error {
 	p.WrapError = s.wrapError
-	dispatcher, err := s.xp.GetDispatcher()
+	dispatcher, err := s.xp.getDispatcher()
 	if err != nil {
 		return err
 	}

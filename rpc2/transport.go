@@ -13,7 +13,7 @@ type WrapErrorFunc func(error) interface{}
 type UnwrapErrorFunc func(nxt DecodeNext) (error, error)
 
 type Transporter interface {
-	GetDispatcher() (Dispatcher, error)
+	getDispatcher() (dispatcher, error)
 	Run(bool) error
 	IsConnected() bool
 }
@@ -214,7 +214,7 @@ func (t *Transport) Decode(i interface{}) (err error) {
 	if cp, err = t.getConPackage(); err == nil {
 		err = cp.Decode(i)
 	}
-	return
+	return err
 }
 
 func (t *Transport) RawWrite(b []byte) (err error) {
@@ -225,11 +225,10 @@ func (t *Transport) RawWrite(b []byte) (err error) {
 	return err
 }
 
-func (t *Transport) GetDispatcher() (d Dispatcher, err error) {
+func (t *Transport) getDispatcher() (dispatcher, error) {
 	if !t.IsConnected() {
-		err = DisconnectedError{}
+		return nil, DisconnectedError{}
 	} else {
-		d = t.dispatcher
+		return t.dispatcher, nil
 	}
-	return
 }

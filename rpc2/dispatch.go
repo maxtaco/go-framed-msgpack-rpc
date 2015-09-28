@@ -5,13 +5,9 @@ import "sync"
 type DecodeNext func(interface{}) error
 type ServeHook func(DecodeNext) (interface{}, error)
 
-type Dispatcher interface {
+type dispatcher interface {
 	Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) error
 	RegisterProtocol(Protocol) error
-}
-
-type dispatcher interface {
-	Dispatcher
 	Dispatch(m *Message) error
 	Reset() error
 }
