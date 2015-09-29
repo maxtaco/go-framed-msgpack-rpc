@@ -5,10 +5,10 @@ import "sync"
 type DecodeNext func(interface{}) error
 type ServeHook func(DecodeNext) (interface{}, error)
 
-type Dispatcher interface {
-	Dispatch(m *Message) error
+type dispatcher interface {
 	Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) error
 	RegisterProtocol(Protocol) error
+	Dispatch(m *Message) error
 	Reset() error
 }
 
@@ -23,12 +23,12 @@ type Dispatch struct {
 	calls      map[int]*Call
 	seqid      int
 	callsMutex *sync.Mutex
-	xp         Transporter
+	xp         transporter
 	log        LogInterface
 	wrapError  WrapErrorFunc
 }
 
-func NewDispatch(xp Transporter, l LogInterface, wef WrapErrorFunc) *Dispatch {
+func NewDispatch(xp transporter, l LogInterface, wef WrapErrorFunc) *Dispatch {
 	return &Dispatch{
 		protocols:  make(map[string]Protocol),
 		calls:      make(map[int]*Call),

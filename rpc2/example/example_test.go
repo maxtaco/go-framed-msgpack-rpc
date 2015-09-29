@@ -10,16 +10,16 @@ import (
 )
 
 func TestProtocol(t *testing.T) {
-	assert.True(t, true, "very true")
-
 	port := 8089
 	server := &Server{port: 8089}
 
+	fmt.Println("About to start server")
 	serverReady := make(chan struct{})
 	go func() {
 		err := server.Run(serverReady)
 		assert.Nil(t, err, "a server error occurred")
 	}()
+	fmt.Println("Server started, waiting for server to be ready")
 	<-serverReady
 
 	c, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))

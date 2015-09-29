@@ -5,7 +5,7 @@ import (
 )
 
 type Message struct {
-	t        Transporter
+	t        transporter
 	nFields  int
 	nDecoded int
 }
