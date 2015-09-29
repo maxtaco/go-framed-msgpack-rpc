@@ -1,11 +1,11 @@
 package rpc2
 
 type Packetizer struct {
-	dispatch  Dispatcher
-	transport Transporter
+	dispatch  dispatcher
+	transport transporter
 }
 
-func NewPacketizer(d Dispatcher, t Transporter) *Packetizer {
+func NewPacketizer(d dispatcher, t transporter) *Packetizer {
 	return &Packetizer{
 		dispatch:  d,
 		transport: t,

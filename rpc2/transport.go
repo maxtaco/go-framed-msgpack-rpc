@@ -13,58 +13,64 @@ type WrapErrorFunc func(error) interface{}
 type UnwrapErrorFunc func(nxt DecodeNext) (error, error)
 
 type Transporter interface {
+	getDispatcher() (dispatcher, error)
+	Run(bool) error
+	IsConnected() bool
+}
+
+type transporter interface {
+	Transporter
 	RawWrite([]byte) error
 	ReadByte() (byte, error)
 	Decode(interface{}) error
 	Encode(interface{}) error
-	GetDispatcher() (Dispatcher, error)
 	ReadLock()
 	ReadUnlock()
 }
 
-type ConPackage struct {
+type conPackage struct {
 	Decoder
 	con        net.Conn
 	remoteAddr net.Addr
 	br         *bufio.Reader
 }
 
-func (c *ConPackage) ReadByte() (b byte, e error) {
+func (c *conPackage) ReadByte() (b byte, e error) {
 	return c.br.ReadByte()
 }
 
-func (c *ConPackage) Write(b []byte) (err error) {
+func (c *conPackage) Write(b []byte) (err error) {
 	_, err = c.con.Write(b)
 	return
 }
 
-func (c *ConPackage) Close() error {
+func (c *conPackage) Close() error {
 	return c.con.Close()
 }
 
-func (c *ConPackage) GetRemoteAddr() net.Addr {
+func (c *conPackage) GetRemoteAddr() net.Addr {
 	return c.remoteAddr
 }
 
 type Transport struct {
 	mh         *codec.MsgpackHandle
-	cpkg       *ConPackage
+	cpkg       *conPackage
 	buf        *bytes.Buffer
 	enc        *codec.Encoder
 	mutex      *sync.Mutex
 	rdlck      *sync.Mutex
 	wrlck      *sync.Mutex
-	dispatcher Dispatcher
+	dispatcher dispatcher
 	packetizer *Packetizer
 	log        LogInterface
 	running    bool
 	wrapError  WrapErrorFunc
 }
 
-func NewConPackage(c net.Conn, mh *codec.MsgpackHandle) *ConPackage {
+func NewconPackage(c net.Conn, mh *codec.MsgpackHandle) *conPackage {
 	br := bufio.NewReader(c)
 
-	return &ConPackage{
+	return &conPackage{
 		con:        c,
 		remoteAddr: c.RemoteAddr(),
 		br:         br,
@@ -92,7 +98,7 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *Transport {
 	buf := new(bytes.Buffer)
 	ret := &Transport{
 		mh:        &mh,
-		cpkg:      NewConPackage(c, &mh),
+		cpkg:      NewconPackage(c, &mh),
 		buf:       buf,
 		enc:       codec.NewEncoder(buf, &mh),
 		mutex:     new(sync.Mutex),
@@ -147,7 +153,7 @@ func (t *Transport) handlePacketizerFailure(err error) {
 	return
 }
 
-func (t *Transport) run(bg bool) (err error) {
+func (t *Transport) Run(bg bool) (err error) {
 	dostart := false
 	t.mutex.Lock()
 	if t.cpkg == nil {
@@ -185,7 +191,7 @@ func (t *Transport) Encode(i interface{}) (err error) {
 	return t.RawWrite(v2)
 }
 
-func (t *Transport) getConPackage() (ret *ConPackage, err error) {
+func (t *Transport) getConPackage() (ret *conPackage, err error) {
 	t.mutex.Lock()
 	ret = t.cpkg
 	t.mutex.Unlock()
@@ -196,7 +202,7 @@ func (t *Transport) getConPackage() (ret *ConPackage, err error) {
 }
 
 func (t *Transport) ReadByte() (b byte, err error) {
-	var cp *ConPackage
+	var cp *conPackage
 	if cp, err = t.getConPackage(); err == nil {
 		b, err = cp.ReadByte()
 	}
@@ -204,27 +210,25 @@ func (t *Transport) ReadByte() (b byte, err error) {
 }
 
 func (t *Transport) Decode(i interface{}) (err error) {
-	var cp *ConPackage
+	var cp *conPackage
 	if cp, err = t.getConPackage(); err == nil {
 		err = cp.Decode(i)
 	}
-	return
+	return err
 }
 
 func (t *Transport) RawWrite(b []byte) (err error) {
-	var cp *ConPackage
+	var cp *conPackage
 	if cp, err = t.getConPackage(); err == nil {
 		err = cp.Write(b)
 	}
 	return err
 }
 
-func (t *Transport) GetDispatcher() (d Dispatcher, err error) {
-	t.run(true)
+func (t *Transport) getDispatcher() (dispatcher, error) {
 	if !t.IsConnected() {
-		err = DisconnectedError{}
+		return nil, DisconnectedError{}
 	} else {
-		d = t.dispatcher
+		return t.dispatcher, nil
 	}
-	return
 }
