@@ -61,7 +61,7 @@ type Transport struct {
 	rdlck      *sync.Mutex
 	wrlck      *sync.Mutex
 	dispatcher dispatcher
-	packetizer *Packetizer
+	packetizer *packetizer
 	log        LogInterface
 	running    bool
 	wrapError  WrapErrorFunc
