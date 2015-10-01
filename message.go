@@ -53,13 +53,13 @@ func (m *message) decodeToNull() error {
 
 func (m *message) makeDecodeNext(debugHook func(interface{})) DecodeNext {
 	// Reserve the next object
-	m.t.ReadLock()
+	m.t.Lock()
 	return func(i interface{}) error {
 		ret := m.Decode(i)
 		if debugHook != nil {
 			debugHook(i)
 		}
-		m.t.ReadUnlock()
+		m.t.Unlock()
 		return ret
 	}
 }

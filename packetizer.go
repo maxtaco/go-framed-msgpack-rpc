@@ -15,9 +15,9 @@ func NewPacketizer(d dispatcher, t transporter) *packetizer {
 func (p *packetizer) getFrame() (int, error) {
 	var l int
 
-	p.transport.ReadLock()
+	p.transport.Lock()
 	err := p.transport.Decode(&l)
-	p.transport.ReadUnlock()
+	p.transport.Unlock()
 
 	return l, err
 }

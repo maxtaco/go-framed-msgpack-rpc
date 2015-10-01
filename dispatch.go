@@ -22,22 +22,23 @@ type Protocol struct {
 }
 
 type dispatch struct {
+	enc        Encoder
 	protocols  map[string]Protocol
 	calls      map[int]*call
 	seqid      int
 	callsMutex *sync.Mutex
-	xp         transporter
+	writeCh    chan []byte
 	log        LogInterface
 	wrapError  WrapErrorFunc
 }
 
-func NewDispatch(xp transporter, l LogInterface, wef WrapErrorFunc) *dispatch {
+func NewDispatch(e Encoder, l LogInterface, wef WrapErrorFunc) *dispatch {
 	return &dispatch{
+		enc:        e,
 		protocols:  make(map[string]Protocol),
 		calls:      make(map[int]*call),
 		seqid:      0,
 		callsMutex: new(sync.Mutex),
-		xp:         xp,
 		log:        l,
 		wrapError:  wef,
 	}
@@ -150,10 +151,7 @@ func (d *dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 
 	d.callsMutex.Unlock()
 
-	err = d.xp.Encode(v)
-	if err != nil {
-		return
-	}
+	err = d.enc.Encode(v)
 	d.log.ClientCall(seqid, name, arg)
 	err = <-call.ch
 	return
