@@ -101,13 +101,9 @@ func (t *Transport) IsConnected() bool {
 }
 
 func (t *Transport) handlePacketizerFailure(err error) {
-	// For now, just throw everything away.  Eventually we might
-	// want to make a plan for reconnecting.
-	// TODO JZ: Not sure what to do with this comment & log
-	// NOTE: The logging implementation can be anything. In particular, it
-	// might try to send logs over this transport, which would take the mutex
-	// again. We *must not* call this while we hold the lock. (Yes, we figured
-	// this out by deadlocking ourselves :p)
+	// NOTE: While this log implementation could be anything,
+	// there's a chance it could use the transport, so we must
+	// log _before_ closing the channel.
 	t.log.TransportError(err)
 	close(t.stopCh)
 	return
@@ -143,6 +139,7 @@ func (t *Transport) run2() (err error) {
 func (t *Transport) readerLoop() chan struct{} {
 	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for {
 			select {
 			case <-t.stopCh:
@@ -159,7 +156,6 @@ func (t *Transport) readerLoop() chan struct{} {
 				t.readerResultCh <- res
 			}
 		}
-		close(done)
 	}()
 	return done
 }
@@ -167,6 +163,7 @@ func (t *Transport) readerLoop() chan struct{} {
 func (t *Transport) writerLoop() chan struct{} {
 	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for {
 			select {
 			case <-t.stopCh:
@@ -176,7 +173,6 @@ func (t *Transport) writerLoop() chan struct{} {
 				t.writerResultCh <- err
 			}
 		}
-		close(done)
 	}()
 	return done
 }
@@ -222,7 +218,6 @@ func (t *Transport) Decode(i interface{}) error {
 func (t *Transport) getDispatcher() (dispatcher, error) {
 	if !t.IsConnected() {
 		return nil, DisconnectedError{}
-	} else {
-		return t.dispatcher, nil
 	}
+	return t.dispatcher, nil
 }

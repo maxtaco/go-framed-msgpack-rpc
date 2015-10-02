@@ -152,6 +152,9 @@ func (d *dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 	d.callsMutex.Unlock()
 
 	err = d.enc.Encode(v)
+	if err != nil {
+		return
+	}
 	d.log.ClientCall(seqid, name, arg)
 	err = <-call.ch
 	return
@@ -160,7 +163,7 @@ func (d *dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 func (d *dispatch) Notify(name string, arg interface{}) (err error) {
 
 	v := []interface{}{TYPE_NOTIFY, name, arg}
-	err = d.xp.Encode(v)
+	err = d.enc.Encode(v)
 	if err != nil {
 		return
 	}
