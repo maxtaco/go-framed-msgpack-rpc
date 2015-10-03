@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/keybase/go-framed-msgpack-rpc/rpc2"
+	"github.com/keybase/go-framed-msgpack-rpc"
 )
 
 type Server struct {
@@ -71,25 +71,25 @@ type ArithInferface interface {
 	GetConstants() (*Constants, error)
 }
 
-func ArithProtocol(i ArithInferface) rpc2.Protocol {
-	return rpc2.Protocol{
+func ArithProtocol(i ArithInferface) rpc.Protocol {
+	return rpc.Protocol{
 		Name: "test.1.arith",
-		Methods: map[string]rpc2.ServeHook{
-			"add": func(nxt rpc2.DecodeNext) (ret interface{}, err error) {
+		Methods: map[string]rpc.ServeHook{
+			"add": func(nxt rpc.DecodeNext) (ret interface{}, err error) {
 				var args AddArgs
 				if err = nxt(&args); err == nil {
 					ret, err = i.Add(&args)
 				}
 				return
 			},
-			"divMod": func(nxt rpc2.DecodeNext) (ret interface{}, err error) {
+			"divMod": func(nxt rpc.DecodeNext) (ret interface{}, err error) {
 				var args DivModArgs
 				if err = nxt(&args); err == nil {
 					ret, err = i.DivMod(&args)
 				}
 				return
 			},
-			"GetConstants": func(nxt rpc2.DecodeNext) (ret interface{}, err error) {
+			"GetConstants": func(nxt rpc.DecodeNext) (ret interface{}, err error) {
 				var args interface{}
 				if err = nxt(&args); err == nil {
 					ret, err = i.GetConstants()
@@ -97,8 +97,8 @@ func ArithProtocol(i ArithInferface) rpc2.Protocol {
 				return
 			},
 		},
-		NotifyMethods: map[string]rpc2.ServeNotifyHook{
-			"updateConstants": func(nxt rpc2.DecodeNext) (err error) {
+		NotifyMethods: map[string]rpc.ServeNotifyHook{
+			"updateConstants": func(nxt rpc.DecodeNext) (err error) {
 				var args Constants
 				if err = nxt(&args); err == nil {
 					err = i.UpdateConstants(&args)
@@ -114,8 +114,8 @@ func ArithProtocol(i ArithInferface) rpc2.Protocol {
 
 func (s *Server) Run(ready chan struct{}) (err error) {
 	var listener net.Listener
-	o := rpc2.SimpleLogOutput{}
-	lf := rpc2.NewSimpleLogFactory(o, nil)
+	o := rpc.SimpleLogOutput{}
+	lf := rpc.NewSimpleLogFactory(o, nil)
 	o.Info(fmt.Sprintf("Listening on port %d...", s.port))
 	if listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", s.port)); err != nil {
 		return
@@ -126,8 +126,8 @@ func (s *Server) Run(ready chan struct{}) (err error) {
 		if c, err = listener.Accept(); err != nil {
 			return
 		}
-		xp := rpc2.NewTransport(c, lf, nil)
-		srv := rpc2.NewServer(xp, nil)
+		xp := rpc.NewTransport(c, lf, nil)
+		srv := rpc.NewServer(xp, nil)
 		srv.Register(ArithProtocol(&ArithServer{c, Constants{}}))
 		srv.Run(true)
 	}

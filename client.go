@@ -1,4 +1,4 @@
-package rpc2
+package rpc
 
 // Client allows calls and notifies on the given transporter, or any protocol
 // type. All will share the same UnwrapErrorFunc hook for unwrapping incoming
