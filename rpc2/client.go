@@ -17,3 +17,12 @@ func (c *Client) Call(method string, arg interface{}, res interface{}) (err erro
 	}
 	return
 }
+
+func (c *Client) Notify(method string, arg interface{}) (err error) {
+	var d dispatcher
+	c.xp.Run(true)
+	if d, err = c.xp.getDispatcher(); err == nil {
+		err = d.Notify(method, arg)
+	}
+	return
+}

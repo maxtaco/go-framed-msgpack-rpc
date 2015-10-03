@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/maxtaco/go-framed-msgpack-rpc/rpc2"
+	"github.com/keybase/go-framed-msgpack-rpc/rpc2"
 )
 
 type Server struct {
@@ -13,7 +13,8 @@ type Server struct {
 }
 
 type ArithServer struct {
-	c net.Conn
+	c         net.Conn
+	constants Constants
 }
 
 func (a *ArithServer) Add(args *AddArgs) (ret int, err error) {
@@ -30,6 +31,15 @@ func (a *ArithServer) DivMod(args *DivModArgs) (ret *DivModRes, err error) {
 		ret.R = args.A % args.B
 	}
 	return
+}
+
+func (a *ArithServer) UpdateConstants(args *Constants) error {
+	a.constants = *args
+	return nil
+}
+
+func (a *ArithServer) GetConstants() (*Constants, error) {
+	return &a.constants, nil
 }
 
 //---------------------------------------------------------------
@@ -50,9 +60,15 @@ type DivModRes struct {
 	R int
 }
 
+type Constants struct {
+	Pi int
+}
+
 type ArithInferface interface {
 	Add(*AddArgs) (int, error)
 	DivMod(*DivModArgs) (*DivModRes, error)
+	UpdateConstants(*Constants) error
+	GetConstants() (*Constants, error)
 }
 
 func ArithProtocol(i ArithInferface) rpc2.Protocol {
@@ -70,6 +86,22 @@ func ArithProtocol(i ArithInferface) rpc2.Protocol {
 				var args DivModArgs
 				if err = nxt(&args); err == nil {
 					ret, err = i.DivMod(&args)
+				}
+				return
+			},
+			"GetConstants": func(nxt rpc2.DecodeNext) (ret interface{}, err error) {
+				var args interface{}
+				if err = nxt(&args); err == nil {
+					ret, err = i.GetConstants()
+				}
+				return
+			},
+		},
+		NotifyMethods: map[string]rpc2.ServeNotifyHook{
+			"updateConstants": func(nxt rpc2.DecodeNext) (err error) {
+				var args Constants
+				if err = nxt(&args); err == nil {
+					err = i.UpdateConstants(&args)
 				}
 				return
 			},
@@ -96,7 +128,7 @@ func (s *Server) Run(ready chan struct{}) (err error) {
 		}
 		xp := rpc2.NewTransport(c, lf, nil)
 		srv := rpc2.NewServer(xp, nil)
-		srv.Register(ArithProtocol(&ArithServer{c}))
+		srv.Register(ArithProtocol(&ArithServer{c, Constants{}}))
 		srv.Run(true)
 	}
 	return nil

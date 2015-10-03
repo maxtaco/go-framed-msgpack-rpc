@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
-	"github.com/maxtaco/go-framed-msgpack-rpc/rpc2"
+	"github.com/keybase/go-framed-msgpack-rpc/rpc2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -41,4 +42,17 @@ func TestProtocol(t *testing.T) {
 
 	err = cli.Broken()
 	assert.Error(t, err, "Called nonexistent method, expected error")
+
+	pi := 31415
+
+	if err = cli.UpdateConstants(Constants{Pi: pi}); err != nil {
+		t.Fatalf("Unexpected error on notify: %v", err)
+	}
+	time.Sleep(3 * time.Millisecond)
+	var constants Constants
+	if constants, err = cli.GetConstants(); err != nil {
+		t.Fatalf("Unexpected error on GetConstants: %v", err)
+	} else {
+		assert.Equal(t, pi, constants.Pi, "we set the constant properly via Notify")
+	}
 }
