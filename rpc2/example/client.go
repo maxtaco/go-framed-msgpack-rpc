@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"net"
+	"time"
 
-	"github.com/maxtaco/go-framed-msgpack-rpc/rpc2"
+	"github.com/keybase/go-framed-msgpack-rpc/rpc2"
 )
 
 type GenericClient interface {
 	Call(method string, arg interface{}, res interface{}) error
+	Notify(method string, arg interface{}) error
 }
 
 //---------------------------------------------------------------------
@@ -24,6 +26,16 @@ func (a ArithClient) Add(arg AddArgs) (ret int, err error) {
 
 func (a ArithClient) Broken() (err error) {
 	err = a.Call("test.1.arith.broken", nil, nil)
+	return
+}
+
+func (a ArithClient) UpdateConstants(arg Constants) (err error) {
+	err = a.Notify("test.1.arith.updateConstants", arg)
+	return
+}
+
+func (a ArithClient) GetConstants() (ret Constants, err error) {
+	err = a.Call("test.1.arith.GetConstants", nil, &ret)
 	return
 }
 
@@ -52,6 +64,17 @@ func (s *Client) Run() (err error) {
 
 	err = cli.Broken()
 	fmt.Printf("for broken: %v\n", err)
+
+	if err = cli.UpdateConstants(Constants{Pi: 314}); err != nil {
+		return err
+	}
+	time.Sleep(3 * time.Millisecond)
+	var constants Constants
+	if constants, err = cli.GetConstants(); err != nil {
+		return
+	} else {
+		fmt.Printf("constants -> %v\n", constants)
+	}
 
 	return nil
 }

@@ -4,18 +4,21 @@ import "sync"
 
 type DecodeNext func(interface{}) error
 type ServeHook func(DecodeNext) (interface{}, error)
+type ServeNotifyHook func(DecodeNext) error
 
 type dispatcher interface {
 	Call(name string, arg interface{}, res interface{}, f UnwrapErrorFunc) error
+	Notify(name string, arg interface{}) error
 	RegisterProtocol(Protocol) error
 	Dispatch(m *Message) error
 	Reset() error
 }
 
 type Protocol struct {
-	Name      string
-	Methods   map[string]ServeHook
-	WrapError WrapErrorFunc
+	Name          string
+	Methods       map[string]ServeHook
+	NotifyMethods map[string]ServeNotifyHook
+	WrapError     WrapErrorFunc
 }
 
 type Dispatch struct {
@@ -48,6 +51,15 @@ type Request struct {
 	err       interface{}
 	res       interface{}
 	hook      ServeHook
+	wrapError WrapErrorFunc
+}
+
+type NotifyRequest struct {
+	msg       *Message
+	dispatch  *Dispatch
+	method    string
+	err       interface{}
+	hook      ServeNotifyHook
 	wrapError WrapErrorFunc
 }
 
@@ -94,6 +106,21 @@ func (r *Request) serve() {
 	}()
 }
 
+func (r *NotifyRequest) serve() {
+	prof := r.dispatch.log.StartProfiler("serve %s", r.method)
+	nxt := r.msg.makeDecodeNext(func(v interface{}) {
+		r.dispatch.log.ServerNotifyCall(r.method, nil, v)
+	})
+
+	go func() {
+		err := r.hook(nxt)
+		if prof != nil {
+			prof.Stop()
+		}
+		r.dispatch.log.ServerNotifyComplete(r.method, err)
+	}()
+}
+
 func (d *Dispatch) nextSeqid() int {
 	ret := d.seqid
 	d.seqid++
@@ -132,6 +159,17 @@ func (d *Dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 	return
 }
 
+func (d *Dispatch) Notify(name string, arg interface{}) (err error) {
+
+	v := []interface{}{TYPE_NOTIFY, name, arg}
+	err = d.xp.Encode(v)
+	if err != nil {
+		return
+	}
+	d.log.ClientNotify(name, arg)
+	return
+}
+
 func (d *Dispatch) findServeHook(n string) (srv ServeHook, wrapError WrapErrorFunc, err error) {
 	p, m := SplitMethodName(n)
 	var prot Protocol
@@ -146,6 +184,46 @@ func (d *Dispatch) findServeHook(n string) (srv ServeHook, wrapError WrapErrorFu
 	}
 	if wrapError == nil {
 		wrapError = d.wrapError
+	}
+	return
+}
+
+func (d *Dispatch) findServeNotifyHook(n string) (srv ServeNotifyHook, wrapError WrapErrorFunc, err error) {
+	p, m := SplitMethodName(n)
+	var prot Protocol
+	var found bool
+	if prot, found = d.protocols[p]; !found {
+		err = ProtocolNotFoundError{p}
+	} else if srv, found = prot.NotifyMethods[m]; !found {
+		err = MethodNotFoundError{p, m}
+	}
+	if found {
+		wrapError = prot.WrapError
+	}
+	if wrapError == nil {
+		wrapError = d.wrapError
+	}
+	return
+}
+
+func (d *Dispatch) dispatchNotify(m *Message) (err error) {
+	req := NotifyRequest{msg: m, dispatch: d}
+
+	if err = m.Decode(&req.method); err != nil {
+		return
+	}
+
+	var se error
+	var wrapError WrapErrorFunc
+	if req.hook, wrapError, se = d.findServeNotifyHook(req.method); se != nil {
+		req.err = m.WrapError(wrapError, se)
+		if err = m.decodeToNull(); err != nil {
+			return
+		}
+		d.log.ServerNotifyCall(req.method, se, nil)
+	} else {
+		req.wrapError = wrapError
+		req.serve()
 	}
 	return
 }
@@ -246,10 +324,28 @@ func (d *Dispatch) Reset() error {
 }
 
 func (d *Dispatch) Dispatch(m *Message) (err error) {
-	if m.nFields == 4 {
+	switch m.nFields {
+	case 3:
+		err = d.dispatchTriple(m)
+	case 4:
 		err = d.dispatchQuad(m)
-	} else {
+	default:
 		err = NewDispatcherError("can only handle message quads (got n=%d fields)", m.nFields)
+	}
+	return
+}
+
+func (d *Dispatch) dispatchTriple(m *Message) (err error) {
+	var l int
+	if err = m.Decode(&l); err != nil {
+		return
+	}
+	switch l {
+	case TYPE_NOTIFY:
+		d.dispatchNotify(m)
+	default:
+		err = NewDispatcherError("Unexpected message type=%d; wanted NOTIFY=%d",
+			l, TYPE_NOTIFY)
 	}
 	return
 }
