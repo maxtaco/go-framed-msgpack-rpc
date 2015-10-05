@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/keybase/go-framed-msgpack-rpc/rpc2"
+	rpc "github.com/keybase/go-framed-msgpack-rpc"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,8 +28,8 @@ func TestProtocol(t *testing.T) {
 		return
 	}
 
-	xp := rpc2.NewTransport(c, nil, nil)
-	cli := ArithClient{GenericClient: rpc2.NewClient(xp, nil)}
+	xp := rpc.NewTransport(c, nil, nil)
+	cli := ArithClient{GenericClient: rpc.NewClient(xp, nil)}
 
 	B := 34
 	for A := 10; A < 23; A += 2 {

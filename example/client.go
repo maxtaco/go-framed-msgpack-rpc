@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/keybase/go-framed-msgpack-rpc/rpc2"
+	rpc "github.com/keybase/go-framed-msgpack-rpc"
 )
 
 type GenericClient interface {
@@ -51,8 +51,8 @@ func (s *Client) Run() (err error) {
 		return
 	}
 
-	xp := rpc2.NewTransport(c, nil, nil)
-	cli := ArithClient{GenericClient: rpc2.NewClient(xp, nil)}
+	xp := rpc.NewTransport(c, nil, nil)
+	cli := ArithClient{GenericClient: rpc.NewClient(xp, nil)}
 
 	for A := 10; A < 23; A += 2 {
 		var res int

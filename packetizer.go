@@ -1,4 +1,4 @@
-package rpc2
+package rpc
 
 type Packetizer struct {
 	dispatch  dispatcher
