@@ -15,7 +15,7 @@ type UnwrapErrorFunc func(nxt DecodeNext) (error, error)
 
 type Transporter interface {
 	getDispatcher() (dispatcher, error)
-	Run(bool) error
+	Run() error
 	IsConnected() bool
 }
 
@@ -49,15 +49,14 @@ type transport struct {
 	ByteEncoder
 	cdec           *connDecoder
 	dispatcher     dispatcher
-	packetizer     *packetizer
 	log            LogInterface
 	wrapError      WrapErrorFunc
+	startOnce      sync.Once
 	writeCh        chan []byte
 	readByteCh     chan struct{}
 	decodeCh       chan interface{}
 	readerResultCh chan interface{}
 	writerResultCh chan error
-	startedCh      chan struct{}
 	stopCh         chan struct{}
 }
 
@@ -80,16 +79,9 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 		decodeCh:       make(chan interface{}),
 		readerResultCh: make(chan interface{}),
 		writerResultCh: make(chan error),
-		startedCh:      make(chan struct{}, 1),
 		stopCh:         make(chan struct{}),
 	}
 	ret.dispatcher = newDispatch(ret.writeCh, ret.writerResultCh, log, wef)
-	ret.packetizer = newPacketizer(ret.dispatcher, ret)
-	// Make one token available to start
-	select {
-	case ret.startedCh <- struct{}{}:
-	default:
-	}
 	return ret
 }
 
@@ -102,36 +94,30 @@ func (t *transport) IsConnected() bool {
 	}
 }
 
-func (t *transport) handlePacketizerFailure(err error) {
-	// NOTE: While this log implementation could be anything,
-	// there's a chance it could use the transport, so we must
-	// log _before_ closing the channel.
-	t.log.TransportError(err)
-	close(t.stopCh)
-	return
-}
-
-func (t *transport) Run(bg bool) (err error) {
+func (t *transport) Run() (err error) {
 	if !t.IsConnected() {
 		return DisconnectedError{}
 	}
-	select {
-	case <-t.startedCh:
-		if bg {
-			go t.run2()
-		} else {
-			return t.run2()
-		}
-	default:
-	}
+	t.startOnce.Do(func() {
+		err = t.run2()
+	})
 	return
 }
 
 func (t *transport) run2() (err error) {
+	// Initialize transport loops
 	readerDone := t.readerLoop()
 	writerDone := t.writerLoop()
-	err = t.packetizer.Packetize()
-	t.handlePacketizerFailure(err)
+
+	// Packetize: do work
+	packetizer := newPacketizer(t.dispatcher, t)
+	err = packetizer.Packetize()
+
+	// Log packetizer completion and terminate transport loops
+	t.log.TransportError(err)
+	close(t.stopCh)
+
+	// Wait for loops to finish before resetting
 	<-readerDone
 	<-writerDone
 	t.reset()
@@ -182,8 +168,6 @@ func (t *transport) writerLoop() chan struct{} {
 func (t *transport) reset() {
 	t.dispatcher.Reset()
 	t.dispatcher = nil
-	t.packetizer.Clear()
-	t.packetizer = nil
 	t.cdec.Close()
 	t.cdec = nil
 }
