@@ -28,7 +28,6 @@ func newFramedMsgpackEncoder() *framedMsgpackEncoder {
 }
 
 func (e *framedMsgpackEncoder) encodeToBytes(i interface{}) (v []byte, err error) {
-	v = make([]byte, 0)
 	enc := codec.NewEncoderBytes(&v, e.handle)
 	if err = enc.Encode(i); err != nil {
 		return

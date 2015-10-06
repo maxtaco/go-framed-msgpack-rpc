@@ -8,8 +8,6 @@ import (
 	"sync"
 )
 
-var _ transporter = (*transport)(nil)
-
 type WrapErrorFunc func(error) interface{}
 type UnwrapErrorFunc func(nxt DecodeNext) (error, error)
 
@@ -44,20 +42,23 @@ func newConnDecoder(c net.Conn) *connDecoder {
 	}
 }
 
+var _ transporter = (*transport)(nil)
+
 type transport struct {
 	sync.Locker
 	ByteEncoder
-	cdec           *connDecoder
-	dispatcher     dispatcher
-	log            LogInterface
-	wrapError      WrapErrorFunc
-	startOnce      sync.Once
-	writeCh        chan []byte
-	readByteCh     chan struct{}
-	decodeCh       chan interface{}
-	readerResultCh chan interface{}
-	writerResultCh chan error
-	stopCh         chan struct{}
+	cdec             *connDecoder
+	dispatcher       dispatcher
+	log              LogInterface
+	wrapError        WrapErrorFunc
+	startOnce        sync.Once
+	encodeCh         chan []byte
+	encodeResultCh   chan error
+	readByteCh       chan struct{}
+	readByteResultCh chan byteResult
+	decodeCh         chan interface{}
+	decodeResultCh   chan error
+	stopCh           chan struct{}
 }
 
 func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
@@ -69,19 +70,20 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 	byteEncoder := newFramedMsgpackEncoder()
 
 	ret := &transport{
-		Locker:         new(sync.Mutex),
-		ByteEncoder:    byteEncoder,
-		cdec:           cdec,
-		log:            log,
-		wrapError:      wef,
-		writeCh:        make(chan []byte),
-		readByteCh:     make(chan struct{}),
-		decodeCh:       make(chan interface{}),
-		readerResultCh: make(chan interface{}),
-		writerResultCh: make(chan error),
-		stopCh:         make(chan struct{}),
+		Locker:           new(sync.Mutex),
+		ByteEncoder:      byteEncoder,
+		cdec:             cdec,
+		log:              log,
+		wrapError:        wef,
+		encodeCh:         make(chan []byte),
+		encodeResultCh:   make(chan error),
+		readByteCh:       make(chan struct{}),
+		readByteResultCh: make(chan byteResult),
+		decodeCh:         make(chan interface{}),
+		decodeResultCh:   make(chan error),
+		stopCh:           make(chan struct{}),
 	}
-	ret.dispatcher = newDispatch(ret.writeCh, ret.writerResultCh, log, wef)
+	ret.dispatcher = newDispatch(ret.encodeCh, ret.encodeResultCh, log, wef)
 	return ret
 }
 
@@ -106,8 +108,8 @@ func (t *transport) Run() (err error) {
 
 func (t *transport) run2() (err error) {
 	// Initialize transport loops
-	readerDone := t.readerLoop()
-	writerDone := t.writerLoop()
+	readerDone := runInBg(t.readerLoop)
+	writerDone := runInBg(t.writerLoop)
 
 	// Packetize: do work
 	packetizer := newPacketizer(t.dispatcher, t)
@@ -124,45 +126,35 @@ func (t *transport) run2() (err error) {
 	return
 }
 
-func (t *transport) readerLoop() chan struct{} {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			select {
-			case <-t.stopCh:
-				return
-			case i := <-t.decodeCh:
-				err := t.cdec.Decode(i)
-				t.readerResultCh <- err
-			case <-t.readByteCh:
-				b, err := t.cdec.ReadByte()
-				res := byteResult{
-					b:   b,
-					err: err,
-				}
-				t.readerResultCh <- res
+func (t *transport) readerLoop() {
+	for {
+		select {
+		case <-t.stopCh:
+			return
+		case i := <-t.decodeCh:
+			err := t.cdec.Decode(i)
+			t.decodeResultCh <- err
+		case <-t.readByteCh:
+			b, err := t.cdec.ReadByte()
+			res := byteResult{
+				b:   b,
+				err: err,
 			}
+			t.readByteResultCh <- res
 		}
-	}()
-	return done
+	}
 }
 
-func (t *transport) writerLoop() chan struct{} {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			select {
-			case <-t.stopCh:
-				return
-			case bytes := <-t.writeCh:
-				_, err := t.cdec.Write(bytes)
-				t.writerResultCh <- err
-			}
+func (t *transport) writerLoop() {
+	for {
+		select {
+		case <-t.stopCh:
+			return
+		case bytes := <-t.encodeCh:
+			_, err := t.cdec.Write(bytes)
+			t.encodeResultCh <- err
 		}
-	}()
-	return done
+	}
 }
 
 func (t *transport) reset() {
@@ -182,23 +174,20 @@ func (t *transport) Encode(i interface{}) error {
 	if err != nil {
 		return err
 	}
-	t.writeCh <- bytes
-	err = <-t.writerResultCh
+	t.encodeCh <- bytes
+	err = <-t.encodeResultCh
 	return err
 }
 
 func (t *transport) ReadByte() (byte, error) {
 	t.readByteCh <- struct{}{}
-	res := <-t.readerResultCh
-	byteRes, _ := res.(byteResult)
+	byteRes := <-t.readByteResultCh
 	return byteRes.b, byteRes.err
 }
 
 func (t *transport) Decode(i interface{}) error {
 	t.decodeCh <- i
-	res := <-t.readerResultCh
-	err, _ := res.(error)
-	return err
+	return <-t.decodeResultCh
 }
 
 func (t *transport) getDispatcher() (dispatcher, error) {
@@ -206,4 +195,13 @@ func (t *transport) getDispatcher() (dispatcher, error) {
 		return nil, DisconnectedError{}
 	}
 	return t.dispatcher, nil
+}
+
+func runInBg(f func()) chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	return done
 }
