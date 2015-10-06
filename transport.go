@@ -8,6 +8,8 @@ import (
 	"sync"
 )
 
+var _ transporter = (*transport)(nil)
+
 type WrapErrorFunc func(error) interface{}
 type UnwrapErrorFunc func(nxt DecodeNext) (error, error)
 
@@ -31,8 +33,9 @@ type connDecoder struct {
 	io.ByteReader
 }
 
-func newConnDecoder(c net.Conn, mh *codec.MsgpackHandle) *connDecoder {
+func newConnDecoder(c net.Conn) *connDecoder {
 	br := bufio.NewReader(c)
+	mh := &codec.MsgpackHandle{WriteExt: true}
 
 	return &connDecoder{
 		Conn:       c,
@@ -41,7 +44,7 @@ func newConnDecoder(c net.Conn, mh *codec.MsgpackHandle) *connDecoder {
 	}
 }
 
-type Transport struct {
+type transport struct {
 	sync.Locker
 	ByteEncoder
 	cdec           *connDecoder
@@ -58,16 +61,15 @@ type Transport struct {
 	stopCh         chan struct{}
 }
 
-func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *Transport {
-	mh := &codec.MsgpackHandle{WriteExt: true}
-	cdec := newConnDecoder(c, mh)
+func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *transport {
+	cdec := newConnDecoder(c)
 	if l == nil {
 		l = NewSimpleLogFactory(nil, nil)
 	}
 	log := l.NewLog(cdec.RemoteAddr())
-	byteEncoder := NewFramedMsgpackEncoder(mh)
+	byteEncoder := NewFramedMsgpackEncoder()
 
-	ret := &Transport{
+	ret := &transport{
 		Locker:         new(sync.Mutex),
 		ByteEncoder:    byteEncoder,
 		cdec:           cdec,
@@ -91,7 +93,7 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *Transport {
 	return ret
 }
 
-func (t *Transport) IsConnected() bool {
+func (t *transport) IsConnected() bool {
 	select {
 	case <-t.stopCh:
 		return false
@@ -100,7 +102,7 @@ func (t *Transport) IsConnected() bool {
 	}
 }
 
-func (t *Transport) handlePacketizerFailure(err error) {
+func (t *transport) handlePacketizerFailure(err error) {
 	// NOTE: While this log implementation could be anything,
 	// there's a chance it could use the transport, so we must
 	// log _before_ closing the channel.
@@ -109,7 +111,7 @@ func (t *Transport) handlePacketizerFailure(err error) {
 	return
 }
 
-func (t *Transport) Run(bg bool) (err error) {
+func (t *transport) Run(bg bool) (err error) {
 	if !t.IsConnected() {
 		return DisconnectedError{}
 	}
@@ -125,7 +127,7 @@ func (t *Transport) Run(bg bool) (err error) {
 	return
 }
 
-func (t *Transport) run2() (err error) {
+func (t *transport) run2() (err error) {
 	readerDone := t.readerLoop()
 	writerDone := t.writerLoop()
 	err = t.packetizer.Packetize()
@@ -136,7 +138,7 @@ func (t *Transport) run2() (err error) {
 	return
 }
 
-func (t *Transport) readerLoop() chan struct{} {
+func (t *transport) readerLoop() chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -160,7 +162,7 @@ func (t *Transport) readerLoop() chan struct{} {
 	return done
 }
 
-func (t *Transport) writerLoop() chan struct{} {
+func (t *transport) writerLoop() chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -177,7 +179,7 @@ func (t *Transport) writerLoop() chan struct{} {
 	return done
 }
 
-func (t *Transport) reset() {
+func (t *transport) reset() {
 	t.dispatcher.Reset()
 	t.dispatcher = nil
 	t.packetizer.Clear()
@@ -191,7 +193,7 @@ type byteResult struct {
 	err error
 }
 
-func (t *Transport) Encode(i interface{}) error {
+func (t *transport) Encode(i interface{}) error {
 	bytes, err := t.EncodeToBytes(i)
 	if err != nil {
 		return err
@@ -201,21 +203,21 @@ func (t *Transport) Encode(i interface{}) error {
 	return err
 }
 
-func (t *Transport) ReadByte() (byte, error) {
+func (t *transport) ReadByte() (byte, error) {
 	t.readByteCh <- struct{}{}
 	res := <-t.readerResultCh
 	byteRes, _ := res.(byteResult)
 	return byteRes.b, byteRes.err
 }
 
-func (t *Transport) Decode(i interface{}) error {
+func (t *transport) Decode(i interface{}) error {
 	t.decodeCh <- i
 	res := <-t.readerResultCh
 	err, _ := res.(error)
 	return err
 }
 
-func (t *Transport) getDispatcher() (dispatcher, error) {
+func (t *transport) getDispatcher() (dispatcher, error) {
 	if !t.IsConnected() {
 		return nil, DisconnectedError{}
 	}

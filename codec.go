@@ -1,9 +1,7 @@
 package rpc
 
 import (
-	"bytes"
 	"github.com/ugorji/go/codec"
-	"io/ioutil"
 )
 
 type Decoder interface {
@@ -22,22 +20,19 @@ type FramedMsgpackEncoder struct {
 	handle codec.Handle
 }
 
-func NewFramedMsgpackEncoder(mh *codec.MsgpackHandle) *FramedMsgpackEncoder {
-	if mh == nil {
-		mh = &codec.MsgpackHandle{WriteExt: true}
-	}
+func NewFramedMsgpackEncoder() *FramedMsgpackEncoder {
+	mh := &codec.MsgpackHandle{WriteExt: true}
 	return &FramedMsgpackEncoder{
 		handle: mh,
 	}
 }
 
 func (e *FramedMsgpackEncoder) encodeToBytes(i interface{}) (v []byte, err error) {
-	buf := new(bytes.Buffer)
-	enc := codec.NewEncoder(buf, e.handle)
+	v = make([]byte, 0)
+	enc := codec.NewEncoderBytes(&v, e.handle)
 	if err = enc.Encode(i); err != nil {
 		return
 	}
-	v, _ = ioutil.ReadAll(buf)
 	return
 }
 

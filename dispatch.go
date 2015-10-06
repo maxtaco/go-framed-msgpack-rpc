@@ -55,7 +55,7 @@ type request struct {
 	wrapError WrapErrorFunc
 }
 
-type NotifyRequest struct {
+type notifyRequest struct {
 	msg       *message
 	dispatch  *dispatch
 	method    string
@@ -107,7 +107,7 @@ func (r *request) serve() {
 	}()
 }
 
-func (r *NotifyRequest) serve() {
+func (r *notifyRequest) serve() {
 	prof := r.dispatch.log.StartProfiler("serve %s", r.method)
 	nxt := r.msg.makeDecodeNext(func(v interface{}) {
 		r.dispatch.log.ServerNotifyCall(r.method, nil, v)
@@ -208,7 +208,7 @@ func (d *dispatch) findServeNotifyHook(n string) (srv ServeNotifyHook, wrapError
 }
 
 func (d *dispatch) dispatchNotify(m *message) (err error) {
-	req := NotifyRequest{msg: m, dispatch: d}
+	req := notifyRequest{msg: m, dispatch: d}
 
 	if err = m.Decode(&req.method); err != nil {
 		return
