@@ -16,18 +16,18 @@ type ByteEncoder interface {
 	EncodeToBytes(interface{}) ([]byte, error)
 }
 
-type FramedMsgpackEncoder struct {
+type framedMsgpackEncoder struct {
 	handle codec.Handle
 }
 
-func NewFramedMsgpackEncoder() *FramedMsgpackEncoder {
+func newFramedMsgpackEncoder() *framedMsgpackEncoder {
 	mh := &codec.MsgpackHandle{WriteExt: true}
-	return &FramedMsgpackEncoder{
+	return &framedMsgpackEncoder{
 		handle: mh,
 	}
 }
 
-func (e *FramedMsgpackEncoder) encodeToBytes(i interface{}) (v []byte, err error) {
+func (e *framedMsgpackEncoder) encodeToBytes(i interface{}) (v []byte, err error) {
 	v = make([]byte, 0)
 	enc := codec.NewEncoderBytes(&v, e.handle)
 	if err = enc.Encode(i); err != nil {
@@ -36,7 +36,7 @@ func (e *FramedMsgpackEncoder) encodeToBytes(i interface{}) (v []byte, err error
 	return
 }
 
-func (e *FramedMsgpackEncoder) EncodeToBytes(i interface{}) (bytes []byte, err error) {
+func (e *framedMsgpackEncoder) EncodeToBytes(i interface{}) (bytes []byte, err error) {
 	var length, content []byte
 	if content, err = e.encodeToBytes(i); err != nil {
 		return

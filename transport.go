@@ -61,13 +61,13 @@ type transport struct {
 	stopCh         chan struct{}
 }
 
-func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *transport {
+func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 	cdec := newConnDecoder(c)
 	if l == nil {
 		l = NewSimpleLogFactory(nil, nil)
 	}
 	log := l.NewLog(cdec.RemoteAddr())
-	byteEncoder := NewFramedMsgpackEncoder()
+	byteEncoder := newFramedMsgpackEncoder()
 
 	ret := &transport{
 		Locker:         new(sync.Mutex),
@@ -83,8 +83,8 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) *transport {
 		startedCh:      make(chan struct{}, 1),
 		stopCh:         make(chan struct{}),
 	}
-	ret.dispatcher = NewDispatch(ret, log, wef)
-	ret.packetizer = NewPacketizer(ret.dispatcher, ret)
+	ret.dispatcher = newDispatch(ret.writeCh, ret.writerResultCh, log, wef)
+	ret.packetizer = newPacketizer(ret.dispatcher, ret)
 	// Make one token available to start
 	select {
 	case ret.startedCh <- struct{}{}:

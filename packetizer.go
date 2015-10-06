@@ -5,7 +5,7 @@ type packetizer struct {
 	transport transporter
 }
 
-func NewPacketizer(d dispatcher, t transporter) *packetizer {
+func newPacketizer(d dispatcher, t transporter) *packetizer {
 	return &packetizer{
 		dispatch:  d,
 		transport: t,

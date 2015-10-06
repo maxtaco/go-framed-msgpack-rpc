@@ -22,25 +22,28 @@ type Protocol struct {
 }
 
 type dispatch struct {
-	enc        Encoder
+	enc        ByteEncoder
 	protocols  map[string]Protocol
 	calls      map[int]*call
 	seqid      int
 	callsMutex *sync.Mutex
 	writeCh    chan []byte
+	errCh      chan error
 	log        LogInterface
 	wrapError  WrapErrorFunc
 }
 
-func NewDispatch(e Encoder, l LogInterface, wef WrapErrorFunc) *dispatch {
+func newDispatch(writeCh chan []byte, errCh chan error, l LogInterface, wef WrapErrorFunc) *dispatch {
 	return &dispatch{
-		enc:        e,
+		enc:        newFramedMsgpackEncoder(),
 		protocols:  make(map[string]Protocol),
 		calls:      make(map[int]*call),
 		seqid:      0,
 		callsMutex: new(sync.Mutex),
 		log:        l,
 		wrapError:  wef,
+		writeCh:    writeCh,
+		errCh:      errCh,
 	}
 }
 
@@ -151,9 +154,9 @@ func (d *dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 
 	d.callsMutex.Unlock()
 
-	err = d.enc.Encode(v)
+	err = d.sendEncoded(v)
 	if err != nil {
-		return
+		return err
 	}
 	d.log.ClientCall(seqid, name, arg)
 	err = <-call.ch
@@ -163,12 +166,22 @@ func (d *dispatch) Call(name string, arg interface{}, res interface{}, f UnwrapE
 func (d *dispatch) Notify(name string, arg interface{}) (err error) {
 
 	v := []interface{}{TYPE_NOTIFY, name, arg}
-	err = d.enc.Encode(v)
+	err = d.sendEncoded(v)
 	if err != nil {
 		return
 	}
 	d.log.ClientNotify(name, arg)
 	return
+}
+
+func (d *dispatch) sendEncoded(v interface{}) error {
+	bytes, err := d.enc.EncodeToBytes(v)
+	if err != nil {
+		return err
+	}
+	d.writeCh <- bytes
+	err = <-d.errCh
+	return err
 }
 
 func (d *dispatch) findServeHook(n string) (srv ServeHook, wrapError WrapErrorFunc, err error) {
