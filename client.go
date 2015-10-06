@@ -21,7 +21,7 @@ func NewClient(xp Transporter, f UnwrapErrorFunc) *Client {
 // UnwrapErrorFunc in this client.
 func (c *Client) Call(method string, arg interface{}, res interface{}) (err error) {
 	var d dispatcher
-	c.xp.Run(true)
+	go c.xp.Run()
 	if d, err = c.xp.getDispatcher(); err == nil {
 		err = d.Call(method, arg, res, c.unwrapError)
 	}
@@ -34,7 +34,7 @@ func (c *Client) Call(method string, arg interface{}, res interface{}) (err erro
 // client isn't relevant in this case.
 func (c *Client) Notify(method string, arg interface{}) (err error) {
 	var d dispatcher
-	c.xp.Run(true)
+	go c.xp.Run()
 	if d, err = c.xp.getDispatcher(); err == nil {
 		err = d.Notify(method, arg)
 	}

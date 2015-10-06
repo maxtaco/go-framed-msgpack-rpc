@@ -4,13 +4,13 @@ import (
 	"errors"
 )
 
-type Message struct {
+type message struct {
 	t        transporter
 	nFields  int
 	nDecoded int
 }
 
-func (m *Message) Decode(i interface{}) (err error) {
+func (m *message) Decode(i interface{}) (err error) {
 	err = m.t.Decode(i)
 	if err == nil {
 		m.nDecoded++
@@ -18,7 +18,7 @@ func (m *Message) Decode(i interface{}) (err error) {
 	return err
 }
 
-func (m *Message) WrapError(f WrapErrorFunc, e error) interface{} {
+func (m *message) WrapError(f WrapErrorFunc, e error) interface{} {
 	if f != nil {
 		return f(e)
 	} else if e == nil {
@@ -28,7 +28,7 @@ func (m *Message) WrapError(f WrapErrorFunc, e error) interface{} {
 	}
 }
 
-func (m *Message) DecodeError(f UnwrapErrorFunc) (app error, dispatch error) {
+func (m *message) DecodeError(f UnwrapErrorFunc) (app error, dispatch error) {
 	var s string
 	if f != nil {
 		app, dispatch = f(m.makeDecodeNext(nil))
@@ -38,11 +38,11 @@ func (m *Message) DecodeError(f UnwrapErrorFunc) (app error, dispatch error) {
 	return
 }
 
-func (m *Message) Encode(i interface{}) error {
+func (m *message) Encode(i interface{}) error {
 	return m.t.Encode(i)
 }
 
-func (m *Message) decodeToNull() error {
+func (m *message) decodeToNull() error {
 	var err error
 	for err == nil && m.nDecoded < m.nFields {
 		var i interface{}
@@ -51,15 +51,15 @@ func (m *Message) decodeToNull() error {
 	return err
 }
 
-func (m *Message) makeDecodeNext(debugHook func(interface{})) DecodeNext {
+func (m *message) makeDecodeNext(debugHook func(interface{})) DecodeNext {
 	// Reserve the next object
-	m.t.ReadLock()
+	m.t.Lock()
 	return func(i interface{}) error {
 		ret := m.Decode(i)
 		if debugHook != nil {
 			debugHook(i)
 		}
-		m.t.ReadUnlock()
+		m.t.Unlock()
 		return ret
 	}
 }

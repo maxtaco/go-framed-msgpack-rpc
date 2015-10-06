@@ -19,5 +19,9 @@ func (s *Server) Register(p Protocol) error {
 }
 
 func (s *Server) Run(bg bool) error {
-	return s.xp.Run(bg)
+	if bg {
+		go s.xp.Run()
+		return nil
+	}
+	return s.xp.Run()
 }
