@@ -2,10 +2,11 @@ package rpc
 
 import (
 	"bufio"
-	"github.com/ugorji/go/codec"
 	"io"
 	"net"
 	"sync"
+
+	"github.com/ugorji/go/codec"
 )
 
 type WrapErrorFunc func(error) interface{}
@@ -19,14 +20,13 @@ type Transporter interface {
 
 type transporter interface {
 	Transporter
-	io.ByteReader
-	Decoder
-	Encoder
+	byteReadingDecoder
+	encoder
 	sync.Locker
 }
 
 type connDecoder struct {
-	Decoder
+	decoder
 	net.Conn
 	io.ByteReader
 }
@@ -38,7 +38,7 @@ func newConnDecoder(c net.Conn) *connDecoder {
 	return &connDecoder{
 		Conn:       c,
 		ByteReader: br,
-		Decoder:    codec.NewDecoder(br, mh),
+		decoder:    codec.NewDecoder(br, mh),
 	}
 }
 
@@ -46,7 +46,8 @@ var _ transporter = (*transport)(nil)
 
 type transport struct {
 	sync.Locker
-	ByteEncoder
+	encoder
+	byteReadingDecoder
 	cdec             *connDecoder
 	dispatcher       dispatcher
 	log              LogInterface
@@ -67,11 +68,9 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 		l = NewSimpleLogFactory(nil, nil)
 	}
 	log := l.NewLog(cdec.RemoteAddr())
-	byteEncoder := newFramedMsgpackEncoder()
 
 	ret := &transport{
 		Locker:           new(sync.Mutex),
-		ByteEncoder:      byteEncoder,
 		cdec:             cdec,
 		log:              log,
 		wrapError:        wef,
@@ -83,7 +82,9 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 		decodeResultCh:   make(chan error),
 		stopCh:           make(chan struct{}),
 	}
-	ret.dispatcher = newDispatch(ret.encodeCh, ret.encodeResultCh, log, wef)
+	ret.encoder = newFramedMsgpackEncoder(ret.encodeCh, ret.encodeResultCh)
+	ret.byteReadingDecoder = newFramedMsgpackDecoder(ret.decodeCh, ret.decodeResultCh, ret.readByteCh, ret.readByteResultCh)
+	ret.dispatcher = newDispatch(ret.encoder, ret.byteReadingDecoder, log, wef)
 	return ret
 }
 
@@ -162,32 +163,6 @@ func (t *transport) reset() {
 	t.dispatcher = nil
 	t.cdec.Close()
 	t.cdec = nil
-}
-
-type byteResult struct {
-	b   byte
-	err error
-}
-
-func (t *transport) Encode(i interface{}) error {
-	bytes, err := t.EncodeToBytes(i)
-	if err != nil {
-		return err
-	}
-	t.encodeCh <- bytes
-	err = <-t.encodeResultCh
-	return err
-}
-
-func (t *transport) ReadByte() (byte, error) {
-	t.readByteCh <- struct{}{}
-	byteRes := <-t.readByteResultCh
-	return byteRes.b, byteRes.err
-}
-
-func (t *transport) Decode(i interface{}) error {
-	t.decodeCh <- i
-	return <-t.decodeResultCh
 }
 
 func (t *transport) getDispatcher() (dispatcher, error) {
