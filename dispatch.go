@@ -1,16 +1,22 @@
 package rpc
 
 import (
-	"errors"
 	"sync"
 )
 
-type DecodeNext func(interface{}) error
-
-type ServeHookDescription struct {
-	MakeArg  func() interface{}
-	Callback func(arg interface{}) (ret interface{}, err error)
+type ServeHandlerDescription struct {
+	MakeArg    func() interface{}
+	Handler    func(arg interface{}) (ret interface{}, err error)
+	MethodType MethodType
 }
+
+type MethodType uint
+
+const (
+	MethodCall MethodType = iota
+	MethodNotify
+	MethodResponse
+)
 
 type ErrorUnwrapper interface {
 	MakeArg() interface{}
@@ -21,15 +27,14 @@ type dispatcher interface {
 	Call(name string, arg interface{}, res interface{}, u ErrorUnwrapper) error
 	Notify(name string, arg interface{}) error
 	RegisterProtocol(Protocol) error
-	Dispatch(m *message) error
+	Dispatch(l int) error
 	Reset() error
 }
 
 type Protocol struct {
-	Name          string
-	Methods       map[string]ServeHookDescription
-	NotifyMethods map[string]ServeHookDescription
-	WrapError     WrapErrorFunc
+	Name      string
+	Methods   map[string]ServeHandlerDescription
+	WrapError WrapErrorFunc
 }
 
 type dispatch struct {
@@ -46,13 +51,8 @@ type dispatch struct {
 	dispatchHandlers map[int]messageHandler
 }
 
-type message struct {
-	nFields  int
-	nDecoded int
-}
-
 type messageHandler struct {
-	dispatchFunc  func(*message) error
+	dispatchFunc  func() error
 	messageLength int
 }
 
@@ -75,26 +75,6 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 	return d
 }
 
-type request struct {
-	msg           *message
-	dispatch      *dispatch
-	seqno         int
-	method        string
-	err           interface{}
-	res           interface{}
-	hook          ServeHookDescription
-	wrapErrorFunc WrapErrorFunc
-}
-
-type notifyRequest struct {
-	msg           *message
-	dispatch      *dispatch
-	method        string
-	err           interface{}
-	hook          ServeHookDescription
-	wrapErrorFunc WrapErrorFunc
-}
-
 type call struct {
 	ch             chan error
 	method         string
@@ -106,53 +86,6 @@ type call struct {
 
 func (c *call) Init() {
 	c.ch = make(chan error)
-}
-
-func (r *request) reply() error {
-	v := []interface{}{
-		TYPE_RESPONSE,
-		r.seqno,
-		r.err,
-		r.res,
-	}
-	return r.dispatch.enc.Encode(v)
-}
-
-func (r *request) serve() {
-	prof := r.dispatch.log.StartProfiler("serve %s", r.method)
-
-	args := r.hook.MakeArg()
-	err := r.dispatch.decodeMessage(r.msg, args)
-
-	go func() {
-		r.dispatch.log.ServerCall(r.seqno, r.method, err, args)
-		if err != nil {
-			r.err = wrapError(r.wrapErrorFunc, err)
-		} else {
-			res, err := r.hook.Callback(args)
-			r.err = wrapError(r.wrapErrorFunc, err)
-			r.res = res
-		}
-		prof.Stop()
-		r.dispatch.log.ServerReply(r.seqno, r.method, err, r.res)
-		if err = r.reply(); err != nil {
-			r.dispatch.log.Warning("Reply error for %d: %s", r.seqno, err.Error())
-		}
-	}()
-}
-
-func (r *notifyRequest) serve() {
-	prof := r.dispatch.log.StartProfiler("serve %s", r.method)
-
-	args := r.hook.MakeArg()
-	err := r.dispatch.decodeMessage(r.msg, args)
-
-	go func() {
-		r.dispatch.log.ServerNotifyCall(r.method, nil, args)
-		_, err = r.hook.Callback(args)
-		prof.Stop()
-		r.dispatch.log.ServerNotifyComplete(r.method, err)
-	}()
 }
 
 func (d *dispatch) nextSeqid() int {
@@ -204,40 +137,17 @@ func (d *dispatch) Notify(name string, arg interface{}) (err error) {
 	return
 }
 
-func (d *dispatch) findServeHook(n string) (srv ServeHookDescription, wrapErrorFunc WrapErrorFunc, err error) {
+func (d *dispatch) findServeHandler(n string) (*ServeHandlerDescription, WrapErrorFunc, error) {
 	p, m := SplitMethodName(n)
-	var prot Protocol
-	var found bool
-	if prot, found = d.protocols[p]; !found {
-		err = ProtocolNotFoundError{p}
-	} else if srv, found = prot.Methods[m]; !found {
-		err = MethodNotFoundError{p, m}
+	prot, found := d.protocols[p]
+	if !found {
+		return nil, d.wrapErrorFunc, ProtocolNotFoundError{p}
 	}
-	if found {
-		wrapErrorFunc = prot.WrapError
+	srv, found := prot.Methods[m]
+	if !found {
+		return nil, d.wrapErrorFunc, MethodNotFoundError{p, m}
 	}
-	if wrapErrorFunc == nil {
-		wrapErrorFunc = d.wrapErrorFunc
-	}
-	return
-}
-
-func (d *dispatch) findServeNotifyHook(n string) (srv ServeHookDescription, wrapErrorFunc WrapErrorFunc, err error) {
-	p, m := SplitMethodName(n)
-	var prot Protocol
-	var found bool
-	if prot, found = d.protocols[p]; !found {
-		err = ProtocolNotFoundError{p}
-	} else if srv, found = prot.NotifyMethods[m]; !found {
-		err = MethodNotFoundError{p, m}
-	}
-	if found {
-		wrapErrorFunc = prot.WrapError
-	}
-	if wrapErrorFunc == nil {
-		wrapErrorFunc = d.wrapErrorFunc
-	}
-	return
+	return &srv, prot.WrapError, nil
 }
 
 func (d *dispatch) RegisterProtocol(p Protocol) (err error) {
@@ -259,88 +169,93 @@ func (d *dispatch) Reset() error {
 	return nil
 }
 
-func (d *dispatch) Dispatch(m *message) error {
-	var l int
-	if err := d.decodeMessage(m, &l); err != nil {
+func (d *dispatch) Dispatch(length int) error {
+	var requestType int
+	if err := d.dec.Decode(&requestType); err != nil {
 		return err
 	}
-	handler, ok := d.dispatchHandlers[l]
+	handler, ok := d.dispatchHandlers[requestType]
 	if !ok {
 		return NewDispatcherError("invalid message type")
 	}
-	if m.nFields != handler.messageLength {
-		return NewDispatcherError("wrong number of fields for message (got n=%d, expected n=%d)", m.nFields, handler.messageLength)
+	if length != handler.messageLength {
+		return NewDispatcherError("wrong number of fields for message (got n=%d, expected n=%d)", length, handler.messageLength)
 
 	}
-	return handler.dispatchFunc(m)
+	return handler.dispatchFunc()
 }
 
-func (d *dispatch) dispatchNotify(m *message) (err error) {
-	req := notifyRequest{msg: m, dispatch: d}
-
-	if err = d.decodeMessage(m, &req.method); err != nil {
-		return
-	}
-
-	var se error
-	var wrapErrorFunc WrapErrorFunc
-	if req.hook, wrapErrorFunc, se = d.findServeNotifyHook(req.method); se != nil {
-		req.err = wrapError(wrapErrorFunc, se)
-		if err = d.decodeToNull(m); err != nil {
-			return
-		}
-		d.log.ServerNotifyCall(req.method, se, nil)
-	} else {
-		req.wrapErrorFunc = wrapErrorFunc
-		req.serve()
-	}
-	return
+func (d *dispatch) dispatchNotify() (err error) {
+	req := newRequest(MethodNotify)
+	return d.handleDispatch(req)
 }
 
-func (d *dispatch) dispatchCall(m *message) (err error) {
-	req := request{msg: m, dispatch: d}
+func (d *dispatch) dispatchCall() error {
+	req := newRequest(MethodCall)
+	return d.handleDispatch(req)
+}
 
-	if err = d.decodeMessage(m, &req.seqno); err != nil {
-		return
-	}
-	if err = d.decodeMessage(m, &req.method); err != nil {
-		return
+func (d *dispatch) handleDispatch(req request) error {
+	if err := decodeIntoRequest(d.dec, req); err != nil {
+		return err
 	}
 
+	m := req.Message()
 	var se error
 	var wrapErrorFunc WrapErrorFunc
-	if req.hook, wrapErrorFunc, se = d.findServeHook(req.method); se != nil {
-		req.err = wrapError(wrapErrorFunc, se)
-		if err = d.decodeToNull(m); err != nil {
-			return
+	var serveHandler *ServeHandlerDescription
+	if serveHandler, wrapErrorFunc, se = d.findServeHandler(m.method); se != nil {
+		m.err = wrapError(wrapErrorFunc, se)
+		if err := decodeToNull(d.dec, m); err != nil {
+			return err
 		}
-		d.log.ServerCall(req.seqno, req.method, se, nil)
-		err = req.reply()
-	} else {
-		req.wrapErrorFunc = wrapErrorFunc
-		req.serve()
+		req.LogInvocation(d.log, se, nil)
+		return req.Reply(d.enc, d.log)
 	}
-	return
+	d.serveRequest(req, serveHandler, wrapErrorFunc)
+	return nil
+}
+
+func (d *dispatch) serveRequest(r request, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc) {
+	m := r.Message()
+	prof := d.log.StartProfiler("serve %s", m.method)
+
+	arg := handler.MakeArg()
+	err := decodeMessage(d.dec, m, arg)
+
+	go func() {
+		r.LogInvocation(d.log, err, arg)
+		if err != nil {
+			m.err = wrapError(wrapErrorFunc, err)
+		} else {
+			res, err := handler.Handler(arg)
+			m.err = wrapError(wrapErrorFunc, err)
+			m.res = res
+		}
+		prof.Stop()
+		r.LogCompletion(d.log, err)
+		r.Reply(d.enc, d.log)
+	}()
 }
 
 // Server
-func (d *dispatch) dispatchResponse(m *message) (err error) {
-	var seqno int
+func (d *dispatch) dispatchResponse() (err error) {
+	m := &message{remainingFields: 3}
 
-	if err = d.decodeMessage(m, &seqno); err != nil {
+	if err = decodeMessage(d.dec, m, &m.seqno); err != nil {
 		return
 	}
 
 	d.callsMutex.Lock()
 	var call *call
-	if call = d.calls[seqno]; call != nil {
-		delete(d.calls, seqno)
+	if call = d.calls[m.seqno]; call != nil {
+		delete(d.calls, m.seqno)
 	}
 	d.callsMutex.Unlock()
 
 	if call == nil {
-		d.log.UnexpectedReply(seqno)
-		err = d.decodeToNull(m)
+		d.log.UnexpectedReply(m.seqno)
+		err = decodeToNull(d.dec, m)
 		return
 	}
 
@@ -348,19 +263,19 @@ func (d *dispatch) dispatchResponse(m *message) (err error) {
 
 	call.profiler.Stop()
 
-	if apperr, err = d.decodeError(m, call.errorUnwrapper); err == nil {
+	if apperr, err = decodeError(d.dec, m, call.errorUnwrapper); err == nil {
 		decode_to := call.res
 		if decode_to == nil {
 			decode_to = new(interface{})
 		}
-		err = d.decodeMessage(m, decode_to)
-		d.log.ClientReply(seqno, call.method, err, decode_to)
+		err = decodeMessage(d.dec, m, decode_to)
+		d.log.ClientReply(m.seqno, call.method, err, decode_to)
 	} else {
-		d.log.ClientReply(seqno, call.method, err, nil)
+		d.log.ClientReply(m.seqno, call.method, err, nil)
 	}
 
 	if err != nil {
-		d.decodeToNull(m)
+		decodeToNull(d.dec, m)
 		if apperr == nil {
 			apperr = err
 		}
@@ -371,44 +286,12 @@ func (d *dispatch) dispatchResponse(m *message) (err error) {
 	return
 }
 
-func (d *dispatch) decodeMessage(m *message, i interface{}) error {
-	err := d.dec.Decode(i)
-	if err == nil {
-		m.nDecoded++
-	}
-	return err
-}
-
-func (d *dispatch) decodeToNull(m *message) error {
-	var err error
-	for err == nil && m.nDecoded < m.nFields {
-		i := new(interface{})
-		d.decodeMessage(m, i)
-	}
-	return err
-}
-
-func (d *dispatch) decodeError(m *message, f ErrorUnwrapper) (app error, dispatch error) {
-	var s string
-	if f != nil {
-		arg := f.MakeArg()
-		err := d.decodeMessage(m, arg)
-		if err != nil {
-			return nil, err
-		}
-		return f.UnwrapError(arg)
-	} else if dispatch = d.decodeMessage(m, &s); dispatch == nil && len(s) > 0 {
-		app = errors.New(s)
-	}
-	return
-}
-
 func wrapError(f WrapErrorFunc, e error) interface{} {
 	if f != nil {
 		return f(e)
-	} else if e == nil {
-		return nil
-	} else {
-		return e.Error()
 	}
+	if e == nil {
+		return nil
+	}
+	return e.Error()
 }
