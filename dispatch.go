@@ -8,12 +8,12 @@ import (
 type DecodeNext func(interface{}) error
 
 type ServeHookDescription struct {
-	Args func() interface{}
-	Func func(arg interface{}) (ret interface{}, err error)
+	MakeArg  func() interface{}
+	Callback func(arg interface{}) (ret interface{}, err error)
 }
 
 type ErrorUnwrapper interface {
-	Arg() interface{}
+	MakeArg() interface{}
 	UnwrapError(arg interface{}) (appError error, dispatchError error)
 }
 
@@ -33,17 +33,17 @@ type Protocol struct {
 }
 
 type dispatch struct {
-	enc             encoder
-	dec             byteReadingDecoder
-	protocols       map[string]Protocol
-	calls           map[int]*call
-	seqid           int
-	callsMutex      *sync.Mutex
-	writeCh         chan []byte
-	errCh           chan error
-	log             LogInterface
-	wrapErrorFunc   WrapErrorFunc
-	messageHandlers map[int]messageHandler
+	enc              encoder
+	dec              byteReadingDecoder
+	protocols        map[string]Protocol
+	calls            map[int]*call
+	seqid            int
+	callsMutex       *sync.Mutex
+	writeCh          chan []byte
+	errCh            chan error
+	log              LogInterface
+	wrapErrorFunc    WrapErrorFunc
+	dispatchHandlers map[int]messageHandler
 }
 
 type message struct {
@@ -67,7 +67,7 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 		log:           l,
 		wrapErrorFunc: wef,
 	}
-	d.messageHandlers = map[int]messageHandler{
+	d.dispatchHandlers = map[int]messageHandler{
 		TYPE_NOTIFY:   {dispatchFunc: d.dispatchNotify, messageLength: 3},
 		TYPE_CALL:     {dispatchFunc: d.dispatchCall, messageLength: 4},
 		TYPE_RESPONSE: {dispatchFunc: d.dispatchResponse, messageLength: 4},
@@ -121,7 +121,7 @@ func (r *request) reply() error {
 func (r *request) serve() {
 	prof := r.dispatch.log.StartProfiler("serve %s", r.method)
 
-	args := r.hook.Args()
+	args := r.hook.MakeArg()
 	err := r.dispatch.decodeMessage(r.msg, args)
 
 	go func() {
@@ -129,7 +129,7 @@ func (r *request) serve() {
 		if err != nil {
 			r.err = wrapError(r.wrapErrorFunc, err)
 		} else {
-			res, err := r.hook.Func(args)
+			res, err := r.hook.Callback(args)
 			r.err = wrapError(r.wrapErrorFunc, err)
 			r.res = res
 		}
@@ -144,12 +144,12 @@ func (r *request) serve() {
 func (r *notifyRequest) serve() {
 	prof := r.dispatch.log.StartProfiler("serve %s", r.method)
 
-	args := r.hook.Args()
+	args := r.hook.MakeArg()
 	err := r.dispatch.decodeMessage(r.msg, args)
 
 	go func() {
 		r.dispatch.log.ServerNotifyCall(r.method, nil, args)
-		_, err = r.hook.Func(args)
+		_, err = r.hook.Callback(args)
 		prof.Stop()
 		r.dispatch.log.ServerNotifyComplete(r.method, err)
 	}()
@@ -264,7 +264,7 @@ func (d *dispatch) Dispatch(m *message) error {
 	if err := d.decodeMessage(m, &l); err != nil {
 		return err
 	}
-	handler, ok := d.messageHandlers[l]
+	handler, ok := d.dispatchHandlers[l]
 	if !ok {
 		return NewDispatcherError("invalid message type")
 	}
@@ -391,7 +391,7 @@ func (d *dispatch) decodeToNull(m *message) error {
 func (d *dispatch) decodeError(m *message, f ErrorUnwrapper) (app error, dispatch error) {
 	var s string
 	if f != nil {
-		arg := f.Arg()
+		arg := f.MakeArg()
 		err := d.decodeMessage(m, arg)
 		if err != nil {
 			return nil, err

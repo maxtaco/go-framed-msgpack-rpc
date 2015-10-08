@@ -80,10 +80,10 @@ func ArithProtocol(i ArithInferface) rpc.Protocol {
 		Name: "test.1.arith",
 		Methods: map[string]rpc.ServeHookDescription{
 			"add": {
-				Args: func() interface{} {
+				MakeArg: func() interface{} {
 					return new(AddArgs)
 				},
-				Func: func(args interface{}) (interface{}, error) {
+				Callback: func(args interface{}) (interface{}, error) {
 					addArgs, ok := args.(*AddArgs)
 					if !ok {
 						return nil, typeError((*AddArgs)(nil), args)
@@ -92,10 +92,10 @@ func ArithProtocol(i ArithInferface) rpc.Protocol {
 				},
 			},
 			"divMod": {
-				Args: func() interface{} {
+				MakeArg: func() interface{} {
 					return new(DivModArgs)
 				},
-				Func: func(args interface{}) (interface{}, error) {
+				Callback: func(args interface{}) (interface{}, error) {
 					divModArgs, ok := args.(*DivModArgs)
 					if !ok {
 						return nil, typeError((*DivModArgs)(nil), args)
@@ -104,20 +104,20 @@ func ArithProtocol(i ArithInferface) rpc.Protocol {
 				},
 			},
 			"GetConstants": {
-				Args: func() interface{} {
+				MakeArg: func() interface{} {
 					return new(interface{})
 				},
-				Func: func(interface{}) (interface{}, error) {
+				Callback: func(interface{}) (interface{}, error) {
 					return i.GetConstants()
 				},
 			},
 		},
 		NotifyMethods: map[string]rpc.ServeHookDescription{
 			"updateConstants": {
-				Args: func() interface{} {
+				MakeArg: func() interface{} {
 					return new(Constants)
 				},
-				Func: func(args interface{}) (interface{}, error) {
+				Callback: func(args interface{}) (interface{}, error) {
 					constants, ok := args.(*Constants)
 					if !ok {
 						return nil, typeError((*Constants)(nil), args)
