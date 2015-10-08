@@ -1,34 +1,29 @@
 package rpc
 
 type packetizer struct {
-	dispatch  dispatcher
-	transport transporter
+	dispatch dispatcher
+	dec      byteReadingDecoder
 }
 
-func newPacketizer(d dispatcher, t transporter) *packetizer {
+func newPacketizer(d dispatcher, dec byteReadingDecoder) *packetizer {
 	return &packetizer{
-		dispatch:  d,
-		transport: t,
+		dispatch: d,
+		dec:      dec,
 	}
 }
 
 func (p *packetizer) getFrame() (int, error) {
 	var l int
 
-	err := p.transport.Decode(&l)
+	err := p.dec.Decode(&l)
 
 	return l, err
-}
-
-func (p *packetizer) Clear() {
-	p.dispatch = nil
-	p.transport = nil
 }
 
 func (p *packetizer) getMessage(l int) (err error) {
 	var b byte
 
-	if b, err = p.transport.ReadByte(); err != nil {
+	if b, err = p.dec.ReadByte(); err != nil {
 		return err
 	}
 	nb := int(b)

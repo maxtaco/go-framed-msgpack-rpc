@@ -19,8 +19,6 @@ type Transporter interface {
 
 type transporter interface {
 	Transporter
-	byteReadingDecoder
-	encoder
 }
 
 type connDecoder struct {
@@ -43,10 +41,10 @@ func newConnDecoder(c net.Conn) *connDecoder {
 var _ transporter = (*transport)(nil)
 
 type transport struct {
-	encoder
-	byteReadingDecoder
 	cdec             *connDecoder
 	dispatcher       dispatcher
+	enc              encoder
+	dec              byteReadingDecoder
 	log              LogInterface
 	wrapError        WrapErrorFunc
 	startOnce        sync.Once
@@ -78,9 +76,9 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 		decodeResultCh:   make(chan error),
 		stopCh:           make(chan struct{}),
 	}
-	ret.encoder = newFramedMsgpackEncoder(ret.encodeCh, ret.encodeResultCh)
-	ret.byteReadingDecoder = newFramedMsgpackDecoder(ret.decodeCh, ret.decodeResultCh, ret.readByteCh, ret.readByteResultCh)
-	ret.dispatcher = newDispatch(ret.encoder, ret.byteReadingDecoder, log, wef)
+	ret.enc = newFramedMsgpackEncoder(ret.encodeCh, ret.encodeResultCh)
+	ret.dec = newFramedMsgpackDecoder(ret.decodeCh, ret.decodeResultCh, ret.readByteCh, ret.readByteResultCh)
+	ret.dispatcher = newDispatch(ret.enc, ret.dec, log, wef)
 	return ret
 }
 
@@ -109,7 +107,7 @@ func (t *transport) run2() (err error) {
 	writerDone := runInBg(t.writerLoop)
 
 	// Packetize: do work
-	packetizer := newPacketizer(t.dispatcher, t)
+	packetizer := newPacketizer(t.dispatcher, t.dec)
 	err = packetizer.Packetize()
 
 	// Log packetizer completion and terminate transport loops
