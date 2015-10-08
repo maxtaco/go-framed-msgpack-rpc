@@ -10,7 +10,6 @@ import (
 )
 
 type WrapErrorFunc func(error) interface{}
-type UnwrapErrorFunc func(nxt DecodeNext) (error, error)
 
 type Transporter interface {
 	getDispatcher() (dispatcher, error)
@@ -22,7 +21,6 @@ type transporter interface {
 	Transporter
 	byteReadingDecoder
 	encoder
-	sync.Locker
 }
 
 type connDecoder struct {
@@ -45,7 +43,6 @@ func newConnDecoder(c net.Conn) *connDecoder {
 var _ transporter = (*transport)(nil)
 
 type transport struct {
-	sync.Locker
 	encoder
 	byteReadingDecoder
 	cdec             *connDecoder
@@ -70,7 +67,6 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 	log := l.NewLog(cdec.RemoteAddr())
 
 	ret := &transport{
-		Locker:           new(sync.Mutex),
 		cdec:             cdec,
 		log:              log,
 		wrapError:        wef,
