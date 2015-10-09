@@ -96,12 +96,12 @@ func (t *transport) Run() (err error) {
 		return DisconnectedError{}
 	}
 	t.startOnce.Do(func() {
-		err = t.run2()
+		err = t.run()
 	})
 	return
 }
 
-func (t *transport) run2() (err error) {
+func (t *transport) run() (err error) {
 	// Initialize transport loops
 	readerDone := runInBg(t.readerLoop)
 	writerDone := runInBg(t.writerLoop)

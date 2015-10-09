@@ -8,8 +8,8 @@ type Client struct {
 	errorUnwrapper ErrorUnwrapper
 }
 
-// NewClient constructs a new client from the given RPC transport and the
-// UnwrapErrorFunc.
+// NewClient constructs a new client from the given RPC Transporter and the
+// ErrorUnwrapper.
 func NewClient(xp Transporter, u ErrorUnwrapper) *Client {
 	return &Client{xp, u}
 }

@@ -54,13 +54,13 @@ func (e *framedMsgpackEncoder) encodeFrame(i interface{}) (bytes []byte, err err
 	return bytes, nil
 }
 
-func (ep *framedMsgpackEncoder) Encode(i interface{}) error {
-	bytes, err := ep.encodeFrame(i)
+func (e *framedMsgpackEncoder) Encode(i interface{}) error {
+	bytes, err := e.encodeFrame(i)
 	if err != nil {
 		return err
 	}
-	ep.writeCh <- bytes
-	return <-ep.resultCh
+	e.writeCh <- bytes
+	return <-e.resultCh
 }
 
 type byteResult struct {

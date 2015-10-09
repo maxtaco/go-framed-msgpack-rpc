@@ -10,12 +10,12 @@ type ServeHandlerDescription struct {
 	MethodType MethodType
 }
 
-type MethodType uint
+type MethodType int
 
 const (
-	MethodCall MethodType = iota
-	MethodNotify
-	MethodResponse
+	MethodCall     MethodType = 0
+	MethodResponse            = 1
+	MethodNotify              = 2
 )
 
 type ErrorUnwrapper interface {
@@ -43,12 +43,12 @@ type dispatch struct {
 	protocols        map[string]Protocol
 	calls            map[int]*call
 	seqid            int
-	callsMutex       *sync.Mutex
+	callsMutex       sync.Mutex
 	writeCh          chan []byte
 	errCh            chan error
 	log              LogInterface
 	wrapErrorFunc    WrapErrorFunc
-	dispatchHandlers map[int]messageHandler
+	dispatchHandlers map[MethodType]messageHandler
 }
 
 type messageHandler struct {
@@ -63,14 +63,13 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 		protocols:     make(map[string]Protocol),
 		calls:         make(map[int]*call),
 		seqid:         0,
-		callsMutex:    new(sync.Mutex),
 		log:           l,
 		wrapErrorFunc: wef,
 	}
-	d.dispatchHandlers = map[int]messageHandler{
-		TYPE_NOTIFY:   {dispatchFunc: d.dispatchNotify, messageLength: 3},
-		TYPE_CALL:     {dispatchFunc: d.dispatchCall, messageLength: 4},
-		TYPE_RESPONSE: {dispatchFunc: d.dispatchResponse, messageLength: 4},
+	d.dispatchHandlers = map[MethodType]messageHandler{
+		MethodNotify:   {dispatchFunc: d.dispatchNotify, messageLength: 3},
+		MethodCall:     {dispatchFunc: d.dispatchCall, messageLength: 4},
+		MethodResponse: {dispatchFunc: d.dispatchResponse, messageLength: 4},
 	}
 	return d
 }
@@ -103,7 +102,7 @@ func (d *dispatch) Call(name string, arg interface{}, res interface{}, u ErrorUn
 	d.callsMutex.Lock()
 
 	seqid := d.nextSeqid()
-	v := []interface{}{TYPE_CALL, seqid, name, arg}
+	v := []interface{}{MethodCall, seqid, name, arg}
 	profiler := d.log.StartProfiler("call %s", name)
 	call := &call{
 		method:         name,
@@ -128,7 +127,7 @@ func (d *dispatch) Call(name string, arg interface{}, res interface{}, u ErrorUn
 
 func (d *dispatch) Notify(name string, arg interface{}) (err error) {
 
-	v := []interface{}{TYPE_NOTIFY, name, arg}
+	v := []interface{}{MethodNotify, name, arg}
 	err = d.enc.Encode(v)
 	if err != nil {
 		return
@@ -170,7 +169,7 @@ func (d *dispatch) Reset() error {
 }
 
 func (d *dispatch) Dispatch(length int) error {
-	var requestType int
+	var requestType MethodType
 	if err := d.dec.Decode(&requestType); err != nil {
 		return err
 	}
@@ -264,12 +263,12 @@ func (d *dispatch) dispatchResponse() (err error) {
 	call.profiler.Stop()
 
 	if apperr, err = decodeError(d.dec, m, call.errorUnwrapper); err == nil {
-		decode_to := call.res
-		if decode_to == nil {
-			decode_to = new(interface{})
+		decodeTo := call.res
+		if decodeTo == nil {
+			decodeTo = new(interface{})
 		}
-		err = decodeMessage(d.dec, m, decode_to)
-		d.log.ClientReply(m.seqno, call.method, err, decode_to)
+		err = decodeMessage(d.dec, m, decodeTo)
+		d.log.ClientReply(m.seqno, call.method, err, decodeTo)
 	} else {
 		d.log.ClientReply(m.seqno, call.method, err, nil)
 	}

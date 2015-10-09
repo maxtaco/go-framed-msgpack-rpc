@@ -38,7 +38,7 @@ func (r *callRequest) LogCompletion(log LogInterface, err error) {
 
 func (r *callRequest) Reply(enc encoder, log LogInterface) error {
 	v := []interface{}{
-		TYPE_RESPONSE,
+		MethodResponse,
 		r.seqno,
 		r.err,
 		r.res,
