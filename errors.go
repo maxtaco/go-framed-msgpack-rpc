@@ -58,3 +58,15 @@ type AlreadyRegisteredError struct {
 func (a AlreadyRegisteredError) Error() string {
 	return a.p + ": protocol already registered"
 }
+
+type TypeError struct {
+	p string
+}
+
+func (t TypeError) Error() string {
+	return t.p
+}
+
+func NewTypeError(expected, actual interface{}) error {
+	return TypeError{fmt.Sprintf("Invalid type for arguments. Expected: %T, actual: %T", expected, actual)}
+}
