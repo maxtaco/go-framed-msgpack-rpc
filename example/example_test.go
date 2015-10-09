@@ -32,7 +32,7 @@ func TestProtocol(t *testing.T) {
 	B := 34
 	for A := 10; A < 23; A += 2 {
 		var res int
-		if res, err = cli.Add(AddArgs{A: A, B: B}); err != nil {
+		if res, err = cli.Add(nil, AddArgs{A: A, B: B}); err != nil {
 			return
 		}
 		assert.Equal(t, A+B, res, "Result should be the two parameters added together")
@@ -43,12 +43,12 @@ func TestProtocol(t *testing.T) {
 
 	pi := 31415
 
-	if err = cli.UpdateConstants(Constants{Pi: pi}); err != nil {
+	if err = cli.UpdateConstants(nil, Constants{Pi: pi}); err != nil {
 		t.Fatalf("Unexpected error on notify: %v", err)
 	}
 	time.Sleep(3 * time.Millisecond)
 	var constants Constants
-	if constants, err = cli.GetConstants(); err != nil {
+	if constants, err = cli.GetConstants(nil); err != nil {
 		t.Fatalf("Unexpected error on GetConstants: %v", err)
 	} else {
 		assert.Equal(t, pi, constants.Pi, "we set the constant properly via Notify")

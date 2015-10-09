@@ -1,5 +1,7 @@
 package rpc
 
+import "golang.org/x/net/context"
+
 // Client allows calls and notifies on the given transporter, or any protocol
 // type. All will share the same ErrorUnwrapper hook for unwrapping incoming
 // msgpack objects and converting to possible Go-native `Error` types
@@ -19,11 +21,14 @@ func NewClient(xp Transporter, u ErrorUnwrapper) *Client {
 // the result field will be populated (if applicable). It returns an Error
 // on error, where the error might have been unwrapped from Msgpack via the
 // UnwrapErrorFunc in this client.
-func (c *Client) Call(method string, arg interface{}, res interface{}) (err error) {
+func (c *Client) Call(ctx context.Context, method string, arg interface{}, res interface{}) (err error) {
 	var d dispatcher
 	go c.xp.Run()
 	if d, err = c.xp.getDispatcher(); err == nil {
-		err = d.Call(method, arg, res, c.errorUnwrapper)
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		err = d.Call(ctx, method, arg, res, c.errorUnwrapper)
 	}
 	return
 }
@@ -32,11 +37,14 @@ func (c *Client) Call(method string, arg interface{}, res interface{}) (err erro
 // wait to hear back for an error. An error might happen in sending the call, in
 // which case a native Go Error is returned. The UnwrapErrorFunc in the underlying
 // client isn't relevant in this case.
-func (c *Client) Notify(method string, arg interface{}) (err error) {
+func (c *Client) Notify(ctx context.Context, method string, arg interface{}) (err error) {
 	var d dispatcher
 	go c.xp.Run()
 	if d, err = c.xp.getDispatcher(); err == nil {
-		err = d.Notify(method, arg)
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		err = d.Notify(ctx, method, arg)
 	}
 	return
 }
