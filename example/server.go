@@ -71,39 +71,62 @@ type ArithInferface interface {
 	GetConstants() (*Constants, error)
 }
 
+func typeError(expected, actual interface{}) error {
+	return fmt.Errorf("Invalid type for arguments. Expected: %T, actual: %T", expected, actual)
+}
+
 func ArithProtocol(i ArithInferface) rpc.Protocol {
 	return rpc.Protocol{
 		Name: "test.1.arith",
-		Methods: map[string]rpc.ServeHook{
-			"add": func(nxt rpc.DecodeNext) (ret interface{}, err error) {
-				var args AddArgs
-				if err = nxt(&args); err == nil {
-					ret, err = i.Add(&args)
-				}
-				return
+		Methods: map[string]rpc.ServeHandlerDescription{
+			"add": {
+				MakeArg: func() interface{} {
+					return new(AddArgs)
+				},
+				Handler: func(args interface{}) (interface{}, error) {
+					addArgs, ok := args.(*AddArgs)
+					if !ok {
+						return nil, typeError((*AddArgs)(nil), args)
+					}
+					return i.Add(addArgs)
+				},
+				MethodType: rpc.MethodCall,
 			},
-			"divMod": func(nxt rpc.DecodeNext) (ret interface{}, err error) {
-				var args DivModArgs
-				if err = nxt(&args); err == nil {
-					ret, err = i.DivMod(&args)
-				}
-				return
+			"divMod": {
+				MakeArg: func() interface{} {
+					return new(DivModArgs)
+				},
+				Handler: func(args interface{}) (interface{}, error) {
+					divModArgs, ok := args.(*DivModArgs)
+					if !ok {
+						return nil, typeError((*DivModArgs)(nil), args)
+					}
+					return i.DivMod(divModArgs)
+				},
+				MethodType: rpc.MethodCall,
 			},
-			"GetConstants": func(nxt rpc.DecodeNext) (ret interface{}, err error) {
-				var args interface{}
-				if err = nxt(&args); err == nil {
-					ret, err = i.GetConstants()
-				}
-				return
+			"GetConstants": {
+				MakeArg: func() interface{} {
+					return new(interface{})
+				},
+				Handler: func(interface{}) (interface{}, error) {
+					return i.GetConstants()
+				},
+				MethodType: rpc.MethodCall,
 			},
-		},
-		NotifyMethods: map[string]rpc.ServeNotifyHook{
-			"updateConstants": func(nxt rpc.DecodeNext) (err error) {
-				var args Constants
-				if err = nxt(&args); err == nil {
-					err = i.UpdateConstants(&args)
-				}
-				return
+			"updateConstants": {
+				MakeArg: func() interface{} {
+					return new(Constants)
+				},
+				Handler: func(args interface{}) (interface{}, error) {
+					constants, ok := args.(*Constants)
+					if !ok {
+						return nil, typeError((*Constants)(nil), args)
+					}
+					err := i.UpdateConstants(constants)
+					return nil, err
+				},
+				MethodType: rpc.MethodNotify,
 			},
 		},
 	}
