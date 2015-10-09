@@ -28,7 +28,7 @@ type dispatcher interface {
 	Notify(name string, arg interface{}) error
 	RegisterProtocol(Protocol) error
 	Dispatch(l int) error
-	Reset()
+	Close() chan struct{}
 }
 
 type Protocol struct {
@@ -41,13 +41,13 @@ type dispatch struct {
 	enc              encoder
 	dec              byteReadingDecoder
 	protocols        map[string]Protocol
-	calls            map[int]*call
 	seqid            int
 	callsMutex       sync.Mutex
 	callCh           chan *call
 	callRespCh       chan *call
 	rmCallCh         chan int
 	stopCh           chan struct{}
+	closedCh         chan struct{}
 	writeCh          chan []byte
 	errCh            chan error
 	log              LogInterface
@@ -65,11 +65,11 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 		enc:           enc,
 		dec:           dec,
 		protocols:     make(map[string]Protocol),
-		calls:         make(map[int]*call),
 		callCh:        make(chan *call),
 		callRespCh:    make(chan *call),
 		rmCallCh:      make(chan int),
 		stopCh:        make(chan struct{}),
+		closedCh:      make(chan struct{}),
 		seqid:         0,
 		log:           l,
 		wrapErrorFunc: wef,
@@ -105,19 +105,20 @@ func newCall(m string, arg interface{}, res interface{}, u ErrorUnwrapper, p Pro
 }
 
 func (d *dispatch) callLoop() {
+	calls := make(map[int]*call)
 	for {
 		select {
 		case <-d.stopCh:
-			for k, v := range d.calls {
+			for _, v := range calls {
 				v.ch <- EofError{}
-				delete(d.calls, k)
 			}
+			close(d.closedCh)
 			return
 		case c := <-d.callCh:
 			seqid := d.nextSeqid()
 			c.seqid = seqid
 			v := []interface{}{MethodCall, seqid, c.method, c.arg}
-			d.calls[c.seqid] = c
+			calls[c.seqid] = c
 			err := d.enc.Encode(v)
 			if err != nil {
 				c.ch <- err
@@ -125,8 +126,8 @@ func (d *dispatch) callLoop() {
 			}
 			d.log.ClientCall(seqid, c.method, c.arg)
 		case seqid := <-d.rmCallCh:
-			call := d.calls[seqid]
-			delete(d.calls, seqid)
+			call := calls[seqid]
+			delete(calls, seqid)
 			d.callRespCh <- call
 		}
 	}
@@ -178,8 +179,9 @@ func (d *dispatch) RegisterProtocol(p Protocol) (err error) {
 	return err
 }
 
-func (d *dispatch) Reset() {
+func (d *dispatch) Close() chan struct{} {
 	close(d.stopCh)
+	return d.closedCh
 }
 
 func (d *dispatch) Dispatch(length int) error {
