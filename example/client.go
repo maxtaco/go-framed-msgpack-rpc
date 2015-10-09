@@ -16,27 +16,32 @@ type GenericClient interface {
 
 //---------------------------------------------------------------------
 
-type ArithClient struct {
+type TestClient struct {
 	GenericClient
 }
 
-func (a ArithClient) Add(ctx context.Context, arg AddArgs) (ret int, err error) {
+func (a TestClient) Add(ctx context.Context, arg AddArgs) (ret int, err error) {
 	err = a.Call(ctx, "test.1.arith.add", arg, &ret)
 	return
 }
 
-func (a ArithClient) Broken() (err error) {
+func (a TestClient) Broken() (err error) {
 	err = a.Call(nil, "test.1.arith.broken", nil, nil)
 	return
 }
 
-func (a ArithClient) UpdateConstants(ctx context.Context, arg Constants) (err error) {
+func (a TestClient) UpdateConstants(ctx context.Context, arg Constants) (err error) {
 	err = a.Notify(ctx, "test.1.arith.updateConstants", arg)
 	return
 }
 
-func (a ArithClient) GetConstants(ctx context.Context) (ret Constants, err error) {
+func (a TestClient) GetConstants(ctx context.Context) (ret Constants, err error) {
 	err = a.Call(ctx, "test.1.arith.GetConstants", nil, &ret)
+	return
+}
+
+func (a TestClient) LongCall(ctx context.Context) (ret int, err error) {
+	err = a.Call(ctx, "test.1.arith.LongCall", nil, &ret)
 	return
 }
 
@@ -53,7 +58,7 @@ func (s *Client) Run() (err error) {
 	}
 
 	xp := rpc.NewTransport(c, nil, nil)
-	cli := ArithClient{GenericClient: rpc.NewClient(xp, nil)}
+	cli := TestClient{GenericClient: rpc.NewClient(xp, nil)}
 
 	for A := 10; A < 23; A += 2 {
 		var res int

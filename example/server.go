@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/keybase/go-framed-msgpack-rpc"
 )
@@ -12,17 +13,17 @@ type Server struct {
 	port int
 }
 
-type ArithServer struct {
+type TestServer struct {
 	c         net.Conn
 	constants Constants
 }
 
-func (a *ArithServer) Add(args *AddArgs) (ret int, err error) {
+func (a *TestServer) Add(args *AddArgs) (ret int, err error) {
 	ret = args.A + args.B
 	return
 }
 
-func (a *ArithServer) DivMod(args *DivModArgs) (ret *DivModRes, err error) {
+func (a *TestServer) DivMod(args *DivModArgs) (ret *DivModRes, err error) {
 	ret = &DivModRes{}
 	if args.B == 0 {
 		err = errors.New("Cannot divide by 0")
@@ -33,13 +34,18 @@ func (a *ArithServer) DivMod(args *DivModArgs) (ret *DivModRes, err error) {
 	return
 }
 
-func (a *ArithServer) UpdateConstants(args *Constants) error {
+func (a *TestServer) UpdateConstants(args *Constants) error {
 	a.constants = *args
 	return nil
 }
 
-func (a *ArithServer) GetConstants() (*Constants, error) {
+func (a *TestServer) GetConstants() (*Constants, error) {
 	return &a.constants, nil
+}
+
+func (a *TestServer) LongCall() (int, error) {
+	time.Sleep(100 * time.Millisecond)
+	return 1, nil
 }
 
 //---------------------------------------------------------------
@@ -64,14 +70,15 @@ type Constants struct {
 	Pi int
 }
 
-type ArithInferface interface {
+type TestInterface interface {
 	Add(*AddArgs) (int, error)
 	DivMod(*DivModArgs) (*DivModRes, error)
 	UpdateConstants(*Constants) error
 	GetConstants() (*Constants, error)
+	LongCall() (int, error)
 }
 
-func ArithProtocol(i ArithInferface) rpc.Protocol {
+func ArithProtocol(i TestInterface) rpc.Protocol {
 	return rpc.Protocol{
 		Name: "test.1.arith",
 		Methods: map[string]rpc.ServeHandlerDescription{
@@ -124,6 +131,15 @@ func ArithProtocol(i ArithInferface) rpc.Protocol {
 				},
 				MethodType: rpc.MethodNotify,
 			},
+			"LongCall": {
+				MakeArg: func() interface{} {
+					return new(interface{})
+				},
+				Handler: func(interface{}) (interface{}, error) {
+					return i.LongCall()
+				},
+				MethodType: rpc.MethodCall,
+			},
 		},
 	}
 }
@@ -147,7 +163,7 @@ func (s *Server) Run(ready chan struct{}) (err error) {
 		}
 		xp := rpc.NewTransport(c, lf, nil)
 		srv := rpc.NewServer(xp, nil)
-		srv.Register(ArithProtocol(&ArithServer{c, Constants{}}))
+		srv.Register(ArithProtocol(&TestServer{c, Constants{}}))
 		srv.Run(true)
 	}
 	return nil
