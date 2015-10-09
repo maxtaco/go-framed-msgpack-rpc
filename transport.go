@@ -110,14 +110,21 @@ func (t *transport) run() (err error) {
 	packetizer := newPacketizer(t.dispatcher, t.dec)
 	err = packetizer.Packetize()
 
-	// Log packetizer completion and terminate transport loops
+	// Log packetizer completion
 	t.log.TransportError(err)
+
+	// Since the dispatcher might require the transport, we have to
+	// close it before terminating our loops
+	<-t.dispatcher.Close()
 	close(t.stopCh)
 
-	// Wait for loops to finish before resetting
+	// Wait for loops to finish before closing the connection
 	<-readerDone
 	<-writerDone
-	t.reset()
+
+	// Cleanup
+	t.cdec.Close()
+
 	return
 }
 
@@ -150,13 +157,6 @@ func (t *transport) writerLoop() {
 			t.encodeResultCh <- err
 		}
 	}
-}
-
-func (t *transport) reset() {
-	t.dispatcher.Reset()
-	t.dispatcher = nil
-	t.cdec.Close()
-	t.cdec = nil
 }
 
 func (t *transport) getDispatcher() (dispatcher, error) {

@@ -28,7 +28,7 @@ type dispatcher interface {
 	Notify(name string, arg interface{}) error
 	RegisterProtocol(Protocol) error
 	Dispatch(l int) error
-	Reset() error
+	Close() chan struct{}
 }
 
 type Protocol struct {
@@ -41,9 +41,13 @@ type dispatch struct {
 	enc              encoder
 	dec              byteReadingDecoder
 	protocols        map[string]Protocol
-	calls            map[int]*call
 	seqid            int
 	callsMutex       sync.Mutex
+	callCh           chan *call
+	callRespCh       chan *call
+	rmCallCh         chan int
+	stopCh           chan struct{}
+	closedCh         chan struct{}
 	writeCh          chan []byte
 	errCh            chan error
 	log              LogInterface
@@ -61,7 +65,11 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 		enc:           enc,
 		dec:           dec,
 		protocols:     make(map[string]Protocol),
-		calls:         make(map[int]*call),
+		callCh:        make(chan *call),
+		callRespCh:    make(chan *call),
+		rmCallCh:      make(chan int),
+		stopCh:        make(chan struct{}),
+		closedCh:      make(chan struct{}),
 		seqid:         0,
 		log:           l,
 		wrapErrorFunc: wef,
@@ -71,6 +79,7 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 		MethodCall:     {dispatchFunc: d.dispatchCall, messageLength: 4},
 		MethodResponse: {dispatchFunc: d.dispatchResponse, messageLength: 4},
 	}
+	go d.callLoop()
 	return d
 }
 
@@ -78,13 +87,50 @@ type call struct {
 	ch             chan error
 	method         string
 	seqid          int
+	arg            interface{}
 	res            interface{}
 	errorUnwrapper ErrorUnwrapper
 	profiler       Profiler
 }
 
-func (c *call) Init() {
-	c.ch = make(chan error)
+func newCall(m string, arg interface{}, res interface{}, u ErrorUnwrapper, p Profiler) *call {
+	return &call{
+		ch:             make(chan error),
+		method:         m,
+		arg:            arg,
+		res:            res,
+		errorUnwrapper: u,
+		profiler:       p,
+	}
+}
+
+func (d *dispatch) callLoop() {
+	calls := make(map[int]*call)
+	for {
+		select {
+		case <-d.stopCh:
+			for _, v := range calls {
+				v.ch <- EofError{}
+			}
+			close(d.closedCh)
+			return
+		case c := <-d.callCh:
+			seqid := d.nextSeqid()
+			c.seqid = seqid
+			v := []interface{}{MethodCall, seqid, c.method, c.arg}
+			calls[c.seqid] = c
+			err := d.enc.Encode(v)
+			if err != nil {
+				c.ch <- err
+				continue
+			}
+			d.log.ClientCall(seqid, c.method, c.arg)
+		case seqid := <-d.rmCallCh:
+			call := calls[seqid]
+			delete(calls, seqid)
+			d.callRespCh <- call
+		}
+	}
 }
 
 func (d *dispatch) nextSeqid() int {
@@ -93,36 +139,11 @@ func (d *dispatch) nextSeqid() int {
 	return ret
 }
 
-func (d *dispatch) registerCall(c *call) {
-	d.calls[c.seqid] = c
-}
-
-func (d *dispatch) Call(name string, arg interface{}, res interface{}, u ErrorUnwrapper) (err error) {
-
-	d.callsMutex.Lock()
-
-	seqid := d.nextSeqid()
-	v := []interface{}{MethodCall, seqid, name, arg}
+func (d *dispatch) Call(name string, arg interface{}, res interface{}, u ErrorUnwrapper) error {
 	profiler := d.log.StartProfiler("call %s", name)
-	call := &call{
-		method:         name,
-		seqid:          seqid,
-		res:            res,
-		errorUnwrapper: u,
-		profiler:       profiler,
-	}
-	call.Init()
-	d.registerCall(call)
-
-	d.callsMutex.Unlock()
-
-	err = d.enc.Encode(v)
-	if err != nil {
-		return err
-	}
-	d.log.ClientCall(seqid, name, arg)
-	err = <-call.ch
-	return
+	call := newCall(name, arg, res, u, profiler)
+	d.callCh <- call
+	return <-call.ch
 }
 
 func (d *dispatch) Notify(name string, arg interface{}) (err error) {
@@ -158,14 +179,9 @@ func (d *dispatch) RegisterProtocol(p Protocol) (err error) {
 	return err
 }
 
-func (d *dispatch) Reset() error {
-	d.callsMutex.Lock()
-	for k, v := range d.calls {
-		v.ch <- EofError{}
-		delete(d.calls, k)
-	}
-	d.callsMutex.Unlock()
-	return nil
+func (d *dispatch) Close() chan struct{} {
+	close(d.stopCh)
+	return d.closedCh
 }
 
 func (d *dispatch) Dispatch(length int) error {
@@ -242,20 +258,15 @@ func (d *dispatch) dispatchResponse() (err error) {
 	m := &message{remainingFields: 3}
 
 	if err = decodeMessage(d.dec, m, &m.seqno); err != nil {
-		return
+		return err
 	}
 
-	d.callsMutex.Lock()
-	var call *call
-	if call = d.calls[m.seqno]; call != nil {
-		delete(d.calls, m.seqno)
-	}
-	d.callsMutex.Unlock()
+	d.rmCallCh <- m.seqno
+	call := <-d.callRespCh
 
 	if call == nil {
 		d.log.UnexpectedReply(m.seqno)
-		err = decodeToNull(d.dec, m)
-		return
+		return decodeToNull(d.dec, m)
 	}
 
 	var apperr error
