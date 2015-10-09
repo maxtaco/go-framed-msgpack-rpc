@@ -45,12 +45,6 @@ func (p ProtocolNotFoundError) Error() string {
 	return "protocol not found: " + p.p
 }
 
-type EofError struct{}
-
-func (e EofError) Error() string {
-	return "EOF from server"
-}
-
 type DisconnectedError struct{}
 
 func (e DisconnectedError) Error() string {

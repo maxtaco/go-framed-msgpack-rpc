@@ -115,7 +115,7 @@ func (t *transport) run() (err error) {
 
 	// Since the dispatcher might require the transport, we have to
 	// close it before terminating our loops
-	<-t.dispatcher.Close()
+	<-t.dispatcher.Close(err)
 	close(t.stopCh)
 
 	// Wait for loops to finish before closing the connection
