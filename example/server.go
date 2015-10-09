@@ -71,10 +71,6 @@ type ArithInferface interface {
 	GetConstants() (*Constants, error)
 }
 
-func typeError(expected, actual interface{}) error {
-	return fmt.Errorf("Invalid type for arguments. Expected: %T, actual: %T", expected, actual)
-}
-
 func ArithProtocol(i ArithInferface) rpc.Protocol {
 	return rpc.Protocol{
 		Name: "test.1.arith",
@@ -86,7 +82,7 @@ func ArithProtocol(i ArithInferface) rpc.Protocol {
 				Handler: func(args interface{}) (interface{}, error) {
 					addArgs, ok := args.(*AddArgs)
 					if !ok {
-						return nil, typeError((*AddArgs)(nil), args)
+						return nil, rpc.NewTypeError((*AddArgs)(nil), args)
 					}
 					return i.Add(addArgs)
 				},
@@ -99,7 +95,7 @@ func ArithProtocol(i ArithInferface) rpc.Protocol {
 				Handler: func(args interface{}) (interface{}, error) {
 					divModArgs, ok := args.(*DivModArgs)
 					if !ok {
-						return nil, typeError((*DivModArgs)(nil), args)
+						return nil, rpc.NewTypeError((*DivModArgs)(nil), args)
 					}
 					return i.DivMod(divModArgs)
 				},
@@ -121,7 +117,7 @@ func ArithProtocol(i ArithInferface) rpc.Protocol {
 				Handler: func(args interface{}) (interface{}, error) {
 					constants, ok := args.(*Constants)
 					if !ok {
-						return nil, typeError((*Constants)(nil), args)
+						return nil, rpc.NewTypeError((*Constants)(nil), args)
 					}
 					err := i.UpdateConstants(constants)
 					return nil, err

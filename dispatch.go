@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"io"
 	"sync"
 )
 
@@ -28,7 +29,8 @@ type dispatcher interface {
 	Notify(name string, arg interface{}) error
 	RegisterProtocol(Protocol) error
 	Dispatch(l int) error
-	Close() chan struct{}
+	Close(err error) chan struct{}
+	AddCloseListener(chan error)
 }
 
 type Protocol struct {
@@ -42,7 +44,8 @@ type dispatch struct {
 	dec              byteReadingDecoder
 	protocols        map[string]Protocol
 	seqid            int
-	callsMutex       sync.Mutex
+	listeners        map[chan error]struct{}
+	listenerMtx      sync.Mutex
 	callCh           chan *call
 	callRespCh       chan *call
 	rmCallCh         chan int
@@ -65,6 +68,7 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 		enc:           enc,
 		dec:           dec,
 		protocols:     make(map[string]Protocol),
+		listeners:     make(map[chan error]struct{}),
 		callCh:        make(chan *call),
 		callRespCh:    make(chan *call),
 		rmCallCh:      make(chan int),
@@ -110,7 +114,7 @@ func (d *dispatch) callLoop() {
 		select {
 		case <-d.stopCh:
 			for _, v := range calls {
-				v.ch <- EofError{}
+				v.ch <- io.EOF
 			}
 			close(d.closedCh)
 			return
@@ -179,9 +183,27 @@ func (d *dispatch) RegisterProtocol(p Protocol) (err error) {
 	return err
 }
 
-func (d *dispatch) Close() chan struct{} {
+func (d *dispatch) Close(err error) chan struct{} {
 	close(d.stopCh)
+	d.broadcast(err)
 	return d.closedCh
+}
+
+func (d *dispatch) AddCloseListener(ch chan error) {
+	d.listenerMtx.Lock()
+	defer d.listenerMtx.Unlock()
+	d.listeners[ch] = struct{}{}
+}
+
+func (d *dispatch) broadcast(err error) {
+	d.listenerMtx.Lock()
+	defer d.listenerMtx.Unlock()
+	for ch := range d.listeners {
+		select {
+		case ch <- err:
+		default:
+		}
+	}
 }
 
 func (d *dispatch) Dispatch(length int) error {
