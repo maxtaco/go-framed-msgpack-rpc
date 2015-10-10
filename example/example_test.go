@@ -48,7 +48,7 @@ func TestCall(t *testing.T) {
 
 	B := 34
 	for A := 10; A < 23; A += 2 {
-		res, err := cli.Add(nil, AddArgs{A: A, B: B})
+		res, err := cli.Add(context.Background(), AddArgs{A: A, B: B})
 		assert.Nil(t, err, "an error occurred while adding parameters")
 		assert.Equal(t, A+B, res, "Result should be the two parameters added together")
 	}
@@ -66,11 +66,11 @@ func TestNotify(t *testing.T) {
 
 	pi := 31415
 
-	err := cli.UpdateConstants(nil, Constants{Pi: pi})
+	err := cli.UpdateConstants(context.Background(), Constants{Pi: pi})
 	assert.Nil(t, err, "Unexpected error on notify: %v", err)
 
 	time.Sleep(3 * time.Millisecond)
-	constants, err := cli.GetConstants(nil)
+	constants, err := cli.GetConstants(context.Background())
 	assert.Nil(t, err, "Unexpected error on GetConstants: %v", err)
 	assert.Equal(t, pi, constants.Pi, "we set the constant properly via Notify")
 }

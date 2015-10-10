@@ -1,6 +1,10 @@
 package rpc
 
-import "golang.org/x/net/context"
+import (
+	"errors"
+
+	"golang.org/x/net/context"
+)
 
 // Client allows calls and notifies on the given transporter, or any protocol
 // type. All will share the same ErrorUnwrapper hook for unwrapping incoming
@@ -22,12 +26,12 @@ func NewClient(xp Transporter, u ErrorUnwrapper) *Client {
 // on error, where the error might have been unwrapped from Msgpack via the
 // UnwrapErrorFunc in this client.
 func (c *Client) Call(ctx context.Context, method string, arg interface{}, res interface{}) (err error) {
+	if ctx == nil {
+		return errors.New("No Context provided for this call")
+	}
 	var d dispatcher
 	go c.xp.Run()
 	if d, err = c.xp.getDispatcher(); err == nil {
-		if ctx == nil {
-			ctx = context.Background()
-		}
 		err = d.Call(ctx, method, arg, res, c.errorUnwrapper)
 	}
 	return
@@ -38,12 +42,12 @@ func (c *Client) Call(ctx context.Context, method string, arg interface{}, res i
 // which case a native Go Error is returned. The UnwrapErrorFunc in the underlying
 // client isn't relevant in this case.
 func (c *Client) Notify(ctx context.Context, method string, arg interface{}) (err error) {
+	if ctx == nil {
+		return errors.New("No Context provided for this notification")
+	}
 	var d dispatcher
 	go c.xp.Run()
 	if d, err = c.xp.getDispatcher(); err == nil {
-		if ctx == nil {
-			ctx = context.Background()
-		}
 		err = d.Notify(ctx, method, arg)
 	}
 	return

@@ -102,7 +102,7 @@ type call struct {
 
 func newCall(ctx context.Context, m string, arg interface{}, res interface{}, u ErrorUnwrapper, p Profiler) *call {
 	return &call{
-		ch:             make(chan error),
+		ch:             make(chan error, 1),
 		doneCh:         make(chan struct{}),
 		method:         m,
 		arg:            arg,
