@@ -89,14 +89,13 @@ func TestLongCallCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var longResult int
 	var err error
-	done := false
+	wait := make(chan struct{})
 	go func() {
 		longResult, err = cli.LongCall(ctx)
-		done = true
+		wait <- struct{}{}
 	}()
 	cancel()
-	time.Sleep(3 * time.Millisecond)
-	assert.True(t, done, "call should be completed via cancel")
+	<-wait
 	assert.Error(t, err, "call should be canceled")
 	assert.Equal(t, longResult, 0, "call should be canceled")
 }

@@ -78,9 +78,9 @@ type TestInterface interface {
 	LongCall() (int, error)
 }
 
-func ArithProtocol(i TestInterface) rpc.Protocol {
+func TestProtocol(i TestInterface) rpc.Protocol {
 	return rpc.Protocol{
-		Name: "test.1.arith",
+		Name: "test.1.testp",
 		Methods: map[string]rpc.ServeHandlerDescription{
 			"add": {
 				MakeArg: func() interface{} {
@@ -163,7 +163,7 @@ func (s *Server) Run(ready chan struct{}) (err error) {
 		}
 		xp := rpc.NewTransport(c, lf, nil)
 		srv := rpc.NewServer(xp, nil)
-		srv.Register(ArithProtocol(&TestServer{c, Constants{}}))
+		srv.Register(TestProtocol(&TestServer{c, Constants{}}))
 		srv.Run(true)
 	}
 	return nil
