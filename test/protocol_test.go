@@ -35,7 +35,7 @@ func prepServer() error {
 	return err
 }
 
-func prepTest(t *testing.T) TestClient {
+func prepClient(t *testing.T) TestClient {
 	c, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", testPort))
 	assert.Nil(t, err, "a dialer error occurred")
 
@@ -44,7 +44,7 @@ func prepTest(t *testing.T) TestClient {
 }
 
 func TestCall(t *testing.T) {
-	cli := prepTest(t)
+	cli := prepClient(t)
 
 	B := 34
 	for A := 10; A < 23; A += 2 {
@@ -55,14 +55,14 @@ func TestCall(t *testing.T) {
 }
 
 func TestBrokenCall(t *testing.T) {
-	cli := prepTest(t)
+	cli := prepClient(t)
 
 	err := cli.Broken()
 	assert.Error(t, err, "Called nonexistent method, expected error")
 }
 
 func TestNotify(t *testing.T) {
-	cli := prepTest(t)
+	cli := prepClient(t)
 
 	pi := 31415
 
@@ -76,7 +76,7 @@ func TestNotify(t *testing.T) {
 }
 
 func TestLongCall(t *testing.T) {
-	cli := prepTest(t)
+	cli := prepClient(t)
 
 	longResult, err := cli.LongCall(context.Background())
 	assert.Nil(t, err, "call should have succeeded")
@@ -84,7 +84,7 @@ func TestLongCall(t *testing.T) {
 }
 
 func TestLongCallCancel(t *testing.T) {
-	cli := prepTest(t)
+	cli := prepClient(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var longResult int
