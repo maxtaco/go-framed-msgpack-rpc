@@ -41,21 +41,23 @@ type Protocol struct {
 }
 
 type dispatch struct {
-	transmitter      encoder
-	receiver         byteReadingDecoder
-	protocols        map[string]Protocol
-	seqid            int
-	listeners        map[chan error]struct{}
-	listenerMtx      sync.Mutex
-	callCh           chan *call
-	callRespCh       chan *call
-	rmCallCh         chan int
-	stopCh           chan struct{}
-	closedCh         chan struct{}
-	writeCh          chan []byte
-	errCh            chan error
+	transmitter encoder
+	receiver    byteReadingDecoder
+
+	protocols     map[string]Protocol
+	seqid         int
+	wrapErrorFunc WrapErrorFunc
+
+	listeners   map[chan error]struct{}
+	listenerMtx sync.Mutex
+
+	callCh     chan *call
+	callRespCh chan *call
+	rmCallCh   chan int
+	stopCh     chan struct{}
+	closedCh   chan struct{}
+
 	log              LogInterface
-	wrapErrorFunc    WrapErrorFunc
 	dispatchHandlers map[MethodType]messageHandler
 }
 
@@ -89,6 +91,7 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 }
 
 type call struct {
+	context.Context
 	ch             chan error
 	doneCh         chan struct{}
 	method         string
@@ -97,11 +100,12 @@ type call struct {
 	res            interface{}
 	errorUnwrapper ErrorUnwrapper
 	profiler       Profiler
-	ctx            context.Context
 }
 
 func newCall(ctx context.Context, m string, arg interface{}, res interface{}, u ErrorUnwrapper, p Profiler) *call {
 	return &call{
+		Context: ctx,
+		// ch has a buffer so the first call to Finish() succeeds
 		ch:             make(chan error, 1),
 		doneCh:         make(chan struct{}),
 		method:         m,
@@ -109,11 +113,10 @@ func newCall(ctx context.Context, m string, arg interface{}, res interface{}, u 
 		res:            res,
 		errorUnwrapper: u,
 		profiler:       p,
-		ctx:            ctx,
 	}
 }
 
-func (c *call) Done(err error) {
+func (c *call) Finish(err error) {
 	// Ensure we only send a response and close doneCh once
 	select {
 	case c.ch <- err:
@@ -128,7 +131,7 @@ func (d *dispatch) callLoop() {
 		select {
 		case <-d.stopCh:
 			for _, v := range calls {
-				v.Done(io.EOF)
+				v.Finish(io.EOF)
 			}
 			close(d.closedCh)
 			return
@@ -139,15 +142,15 @@ func (d *dispatch) callLoop() {
 			calls[c.seqid] = c
 			err := d.transmitter.Encode(v)
 			if err != nil {
-				c.Done(err)
+				c.Finish(err)
 				continue
 			}
 			d.log.ClientCall(seqid, c.method, c.arg)
 			go func() {
 				select {
-				case <-c.ctx.Done():
+				case <-c.Done():
 					// TODO also dispatch a cancelation request
-					c.Done(NewCanceledError(c.method, c.seqid))
+					c.Finish(NewCanceledError(c.method, c.seqid))
 				case <-c.doneCh:
 				}
 			}()
@@ -334,7 +337,7 @@ func (d *dispatch) dispatchResponse() (err error) {
 		}
 	}
 
-	call.Done(apperr)
+	call.Finish(apperr)
 
 	return
 }
