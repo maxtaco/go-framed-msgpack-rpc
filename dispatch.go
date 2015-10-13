@@ -8,7 +8,7 @@ import (
 
 type ServeHandlerDescription struct {
 	MakeArg    func() interface{}
-	Handler    func(arg interface{}) (ret interface{}, err error)
+	Handler    func(ctx context.Context, arg interface{}) (ret interface{}, err error)
 	MethodType MethodType
 }
 
@@ -48,15 +48,24 @@ type dispatch struct {
 	protocols     map[string]Protocol
 	seqid         int
 	wrapErrorFunc WrapErrorFunc
+	tasks         map[int]context.CancelFunc
 
 	listeners   map[chan error]struct{}
 	listenerMtx sync.Mutex
 
+	// Stops all loops when closed
+	stopCh chan struct{}
+	// Closed once all loops are finished
+	closedCh chan struct{}
+
 	callCh     chan *call
 	callRespCh chan *call
 	rmCallCh   chan int
-	stopCh     chan struct{}
-	closedCh   chan struct{}
+
+	// Task loop channels
+	taskBeginCh  chan *task
+	taskCancelCh chan int
+	taskEndCh    chan int
 
 	log              LogInterface
 	dispatchHandlers map[MethodType]messageHandler
@@ -69,15 +78,21 @@ type messageHandler struct {
 
 func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapErrorFunc) *dispatch {
 	d := &dispatch{
-		transmitter:   enc,
-		receiver:      dec,
-		protocols:     make(map[string]Protocol),
-		listeners:     make(map[chan error]struct{}),
-		callCh:        make(chan *call),
-		callRespCh:    make(chan *call),
-		rmCallCh:      make(chan int),
-		stopCh:        make(chan struct{}),
-		closedCh:      make(chan struct{}),
+		transmitter: enc,
+		receiver:    dec,
+		protocols:   make(map[string]Protocol),
+		listeners:   make(map[chan error]struct{}),
+		tasks:       make(map[int]context.CancelFunc),
+		callCh:      make(chan *call),
+		callRespCh:  make(chan *call),
+		rmCallCh:    make(chan int),
+		stopCh:      make(chan struct{}),
+		closedCh:    make(chan struct{}),
+
+		taskBeginCh:  make(chan *task),
+		taskCancelCh: make(chan int),
+		taskEndCh:    make(chan int),
+
 		seqid:         0,
 		log:           l,
 		wrapErrorFunc: wef,
@@ -89,6 +104,7 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 		MethodCancel:   {dispatchFunc: d.dispatchCancel, messageLength: 3},
 	}
 	go d.callLoop()
+	go d.taskLoop()
 	return d
 }
 
@@ -151,6 +167,7 @@ func (d *dispatch) callLoop() {
 				select {
 				case <-c.ctx.Done():
 					d.rmCallCh <- seqid
+					<-d.callRespCh
 					c.Finish(newCanceledError(c.method, c.seqid))
 					d.log.ClientCancel(seqid, c.method)
 					v := []interface{}{MethodCancel, seqid, c.method}
@@ -162,6 +179,31 @@ func (d *dispatch) callLoop() {
 			call := calls[seqid]
 			delete(calls, seqid)
 			d.callRespCh <- call
+		}
+	}
+}
+
+type task struct {
+	seqid      int
+	cancelFunc context.CancelFunc
+}
+
+func (d *dispatch) taskLoop() {
+	tasks := make(map[int]context.CancelFunc)
+	for {
+		select {
+		case <-d.stopCh:
+			// TODO cleanup here?
+			return
+		case t := <-d.taskBeginCh:
+			tasks[t.seqid] = t.cancelFunc
+		case seqid := <-d.taskCancelCh:
+			if cancelFunc, ok := tasks[seqid]; ok {
+				cancelFunc()
+			}
+			delete(tasks, seqid)
+		case seqid := <-d.taskEndCh:
+			delete(tasks, seqid)
 		}
 	}
 }
@@ -262,7 +304,12 @@ func (d *dispatch) dispatchCall() error {
 
 func (d *dispatch) dispatchCancel() (err error) {
 	req := newRequest(MethodCancel)
-	return d.handleDispatch(req)
+	if err := decodeIntoRequest(d.receiver, req); err != nil {
+		return err
+	}
+	req.LogInvocation(d.log, nil, nil)
+	d.taskCancelCh <- req.Message().seqno
+	return nil
 }
 
 func (d *dispatch) handleDispatch(req request) error {
@@ -280,7 +327,10 @@ func (d *dispatch) handleDispatch(req request) error {
 		req.LogInvocation(d.log, se, nil)
 		return req.Reply(d.transmitter, d.log)
 	}
-	req.Serve(d.receiver, d.transmitter, serveHandler, wrapErrorFunc, d.log)
+	cancelFunc := req.Serve(d.receiver, d.transmitter, serveHandler, wrapErrorFunc, d.log)
+	if cancelFunc != nil {
+
+	}
 	return nil
 }
 

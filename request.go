@@ -1,9 +1,13 @@
 package rpc
 
+import (
+	"golang.org/x/net/context"
+)
+
 type request interface {
 	Message() *message
 	Reply(encoder, LogInterface) error
-	Serve(byteReadingDecoder, encoder, *ServeHandlerDescription, WrapErrorFunc, LogInterface)
+	Serve(byteReadingDecoder, encoder, *ServeHandlerDescription, WrapErrorFunc, LogInterface) context.CancelFunc
 	LogInvocation(log LogInterface, err error, arg interface{})
 	LogCompletion(log LogInterface, err error)
 }
@@ -14,6 +18,13 @@ type requestImpl struct {
 
 func (req *requestImpl) Message() *message {
 	return &req.message
+}
+
+func (r *requestImpl) LogInvocation(LogInterface, error, interface{}) {}
+func (r *requestImpl) LogCompletion(LogInterface, error)              {}
+func (r *requestImpl) Reply(encoder, LogInterface) error              { return nil }
+func (r *requestImpl) Serve(byteReadingDecoder, encoder, *ServeHandlerDescription, WrapErrorFunc, LogInterface) context.CancelFunc {
+	return nil
 }
 
 func (req *requestImpl) getArg(receiver decoder, handler *ServeHandlerDescription) (interface{}, error) {
@@ -63,17 +74,18 @@ func (r *callRequest) Reply(enc encoder, log LogInterface) error {
 	return err
 }
 
-func (r *callRequest) Serve(receiver byteReadingDecoder, transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) {
+func (r *callRequest) Serve(receiver byteReadingDecoder, transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) context.CancelFunc {
 
 	prof := log.StartProfiler("serve %s", r.method)
 	arg, err := r.getArg(receiver, handler)
+	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	go func() {
 		r.LogInvocation(log, err, arg)
 		if err != nil {
 			r.err = wrapError(wrapErrorFunc, err)
 		} else {
-			res, err := handler.Handler(arg)
+			res, err := handler.Handler(ctx, arg)
 			r.err = wrapError(wrapErrorFunc, err)
 			r.res = res
 		}
@@ -81,6 +93,7 @@ func (r *callRequest) Serve(receiver byteReadingDecoder, transmitter encoder, ha
 		r.LogCompletion(log, err)
 		r.Reply(transmitter, log)
 	}()
+	return cancelFunc
 }
 
 type notifyRequest struct {
@@ -109,23 +122,21 @@ func (r *notifyRequest) LogCompletion(log LogInterface, err error) {
 	log.ServerNotifyComplete(r.method, err)
 }
 
-func (r *notifyRequest) Reply(enc encoder, log LogInterface) error {
-	return nil
-}
-
-func (r *notifyRequest) Serve(receiver byteReadingDecoder, transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) {
+func (r *notifyRequest) Serve(receiver byteReadingDecoder, transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) context.CancelFunc {
 
 	prof := log.StartProfiler("serve-notify %s", r.method)
 	arg, err := r.getArg(receiver, handler)
+	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	go func() {
 		r.LogInvocation(log, err, arg)
 		if err == nil {
-			_, err = handler.Handler(arg)
+			_, err = handler.Handler(ctx, arg)
 		}
 		prof.Stop()
 		r.LogCompletion(log, err)
 	}()
+	return cancelFunc
 }
 
 type cancelRequest struct {
@@ -149,17 +160,6 @@ func newCancelRequest() *cancelRequest {
 
 func (r *cancelRequest) LogInvocation(log LogInterface, err error, arg interface{}) {
 	log.ServerCancelCall(r.seqno, r.method)
-}
-
-func (r *cancelRequest) LogCompletion(log LogInterface, err error) {
-}
-
-func (r *cancelRequest) Reply(enc encoder, log LogInterface) error {
-	return nil
-}
-
-func (r *cancelRequest) Serve(receiver byteReadingDecoder, transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) {
-	r.LogInvocation(log, nil, nil)
 }
 
 func newRequest(methodType MethodType) request {
