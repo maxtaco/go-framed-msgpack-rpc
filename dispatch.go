@@ -18,6 +18,7 @@ const (
 	MethodCall     MethodType = 0
 	MethodResponse            = 1
 	MethodNotify              = 2
+	MethodCancel              = 3
 )
 
 type ErrorUnwrapper interface {
@@ -85,13 +86,14 @@ func newDispatch(enc encoder, dec byteReadingDecoder, l LogInterface, wef WrapEr
 		MethodNotify:   {dispatchFunc: d.dispatchNotify, messageLength: 3},
 		MethodCall:     {dispatchFunc: d.dispatchCall, messageLength: 4},
 		MethodResponse: {dispatchFunc: d.dispatchResponse, messageLength: 4},
+		MethodCancel:   {dispatchFunc: d.dispatchCancel, messageLength: 3},
 	}
 	go d.callLoop()
 	return d
 }
 
 type call struct {
-	context.Context
+	ctx            context.Context
 	ch             chan error
 	doneCh         chan struct{}
 	method         string
@@ -104,9 +106,8 @@ type call struct {
 
 func newCall(ctx context.Context, m string, arg interface{}, res interface{}, u ErrorUnwrapper, p Profiler) *call {
 	return &call{
-		Context: ctx,
-		// ch has a buffer so the first call to Finish() succeeds
-		ch:             make(chan error, 1),
+		ctx:            ctx,
+		ch:             make(chan error),
 		doneCh:         make(chan struct{}),
 		method:         m,
 		arg:            arg,
@@ -117,11 +118,11 @@ func newCall(ctx context.Context, m string, arg interface{}, res interface{}, u 
 }
 
 func (c *call) Finish(err error) {
-	// Ensure we only send a response and close doneCh once
+	// Ensure we only send a response if something is waiting on c.ch
 	select {
 	case c.ch <- err:
 		close(c.doneCh)
-	default:
+	case <-c.doneCh:
 	}
 }
 
@@ -130,8 +131,8 @@ func (d *dispatch) callLoop() {
 	for {
 		select {
 		case <-d.stopCh:
-			for _, v := range calls {
-				v.Finish(io.EOF)
+			for _, c := range calls {
+				c.Finish(io.EOF)
 			}
 			close(d.closedCh)
 			return
@@ -148,9 +149,12 @@ func (d *dispatch) callLoop() {
 			d.log.ClientCall(seqid, c.method, c.arg)
 			go func() {
 				select {
-				case <-c.Done():
-					// TODO also dispatch a cancelation request
-					c.Finish(NewCanceledError(c.method, c.seqid))
+				case <-c.ctx.Done():
+					d.rmCallCh <- seqid
+					c.Finish(newCanceledError(c.method, c.seqid))
+					d.log.ClientCancel(seqid, c.method)
+					v := []interface{}{MethodCancel, seqid, c.method}
+					d.transmitter.Encode(v)
 				case <-c.doneCh:
 				}
 			}()
@@ -256,16 +260,19 @@ func (d *dispatch) dispatchCall() error {
 	return d.handleDispatch(req)
 }
 
+func (d *dispatch) dispatchCancel() (err error) {
+	req := newRequest(MethodCancel)
+	return d.handleDispatch(req)
+}
+
 func (d *dispatch) handleDispatch(req request) error {
 	if err := decodeIntoRequest(d.receiver, req); err != nil {
 		return err
 	}
 
 	m := req.Message()
-	var se error
-	var wrapErrorFunc WrapErrorFunc
-	var serveHandler *ServeHandlerDescription
-	if serveHandler, wrapErrorFunc, se = d.findServeHandler(m.method); se != nil {
+	serveHandler, wrapErrorFunc, se := d.findServeHandler(m.method)
+	if se != nil {
 		m.err = wrapError(wrapErrorFunc, se)
 		if err := decodeToNull(d.receiver, m); err != nil {
 			return err
@@ -273,30 +280,8 @@ func (d *dispatch) handleDispatch(req request) error {
 		req.LogInvocation(d.log, se, nil)
 		return req.Reply(d.transmitter, d.log)
 	}
-	d.serveRequest(req, serveHandler, wrapErrorFunc)
+	req.Serve(d.receiver, d.transmitter, serveHandler, wrapErrorFunc, d.log)
 	return nil
-}
-
-func (d *dispatch) serveRequest(r request, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc) {
-	m := r.Message()
-	prof := d.log.StartProfiler("serve %s", m.method)
-
-	arg := handler.MakeArg()
-	err := decodeMessage(d.receiver, m, arg)
-
-	go func() {
-		r.LogInvocation(d.log, err, arg)
-		if err != nil {
-			m.err = wrapError(wrapErrorFunc, err)
-		} else {
-			res, err := handler.Handler(arg)
-			m.err = wrapError(wrapErrorFunc, err)
-			m.res = res
-		}
-		prof.Stop()
-		r.LogCompletion(d.log, err)
-		r.Reply(d.transmitter, d.log)
-	}()
 }
 
 // Server
