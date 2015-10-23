@@ -127,6 +127,7 @@ func (d *dispatch) handleCall(calls map[int]*call, c *call) {
 		case <-c.ctx.Done():
 			d.log.ClientCancel(seqid, c.method)
 			v := []interface{}{MethodCancel, seqid, c.method}
+			// TODO: Log Encode() error.
 			d.writer.Encode(v)
 		case <-c.doneCh:
 		}

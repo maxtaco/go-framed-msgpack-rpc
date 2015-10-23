@@ -36,8 +36,8 @@ type receiveHandler struct {
 	wrapErrorFunc WrapErrorFunc
 	tasks         map[int]context.CancelFunc
 
-	listeners   map[chan error]struct{}
 	listenerMtx sync.Mutex
+	listeners   map[chan error]struct{}
 
 	// Stops all loops when closed
 	stopCh chan struct{}
