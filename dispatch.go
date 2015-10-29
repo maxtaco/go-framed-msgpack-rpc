@@ -126,8 +126,10 @@ func (d *dispatch) handleCall(calls map[int]*call, c *call) {
 		select {
 		case <-c.ctx.Done():
 			v := []interface{}{MethodCancel, seqid, c.method}
+			// Dispatch cancellation before returning to avoid race
 			err := d.writer.Encode(v)
 			d.log.ClientCancel(seqid, c.method, err)
+			c.ch <- newCanceledError(c.method, seqid)
 		case <-c.doneCh:
 		}
 	}()
@@ -146,14 +148,14 @@ func (d *dispatch) Call(ctx context.Context, name string, arg interface{}, res i
 	return <-call.ch
 }
 
-func (d *dispatch) Notify(ctx context.Context, name string, arg interface{}) (err error) {
+func (d *dispatch) Notify(ctx context.Context, name string, arg interface{}) error {
 	v := []interface{}{MethodNotify, name, arg}
-	err = d.writer.Encode(v)
+	err := d.writer.Encode(v)
 	if err != nil {
-		return
+		return err
 	}
 	d.log.ClientNotify(name, arg)
-	return
+	return nil
 }
 
 func (d *dispatch) Close(err error) chan struct{} {
