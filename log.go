@@ -22,7 +22,7 @@ type LogInterface interface {
 	ClientNotify(string, interface{})
 	ServerNotifyCall(string, error, interface{})
 	ServerNotifyComplete(string, error)
-	ClientCancel(int, string)
+	ClientCancel(int, string, error)
 	ServerCancelCall(int, string)
 	ClientReply(int, string, error, interface{})
 	StartProfiler(format string, args ...interface{}) Profiler
@@ -167,9 +167,9 @@ func (s SimpleLog) ServerNotifyComplete(meth string, err error) {
 }
 
 // Cancel
-func (s SimpleLog) ClientCancel(q int, meth string) {
+func (s SimpleLog) ClientCancel(q int, meth string, err error) {
 	if s.Opts.ClientTrace() {
-		s.trace("cancel", "", false, q, meth, nil, nil)
+		s.trace("cancel", "", false, q, meth, err, nil)
 	}
 }
 func (s SimpleLog) ServerCancelCall(q int, meth string) {
