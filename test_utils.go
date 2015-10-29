@@ -246,15 +246,15 @@ func (a TestClient) LongCallResult(ctx context.Context) (ret int, err error) {
 }
 
 type mockCodec struct {
-	elems chan interface{}
+	elems []interface{}
 }
 
 func newMockCodec(elems ...interface{}) *mockCodec {
 	md := &mockCodec{
-		elems: make(chan interface{}, 32),
+		elems: make([]interface{}, 0, 32),
 	}
 	for _, i := range elems {
-		md.elems <- i
+		md.elems = append(md.elems, i)
 	}
 	return md
 }
@@ -276,11 +276,15 @@ func (md *mockCodec) ReadByte() (b byte, err error) {
 }
 
 func (md *mockCodec) Encode(i interface{}) error {
+	return md.encode(i)
+}
+
+func (md *mockCodec) encode(i interface{}) error {
 	v := reflect.ValueOf(i)
 	if v.Kind() == reflect.Slice {
 		for i := 0; i < v.Len(); i++ {
 			e := v.Index(i).Interface()
-			md.elems <- e
+			md.elems = append(md.elems, e)
 		}
 		return nil
 	}
@@ -289,27 +293,42 @@ func (md *mockCodec) Encode(i interface{}) error {
 
 func (md *mockCodec) decode(i interface{}) error {
 	v := reflect.ValueOf(i).Elem()
-	d := reflect.ValueOf(<-md.elems)
+	d := reflect.ValueOf(md.elems[0])
 	if !d.Type().AssignableTo(v.Type()) {
 		return fmt.Errorf("Tried to decode incorrect type. Expected: %v, actual: %v", v.Type(), d.Type())
 	}
+	md.elems = md.elems[1:]
 	v.Set(d)
 	return nil
 }
 
 type blockingMockCodec struct {
 	mockCodec
+	ch chan struct{}
 }
 
 func newBlockingMockCodec(elems ...interface{}) *blockingMockCodec {
 	md := newMockCodec(elems...)
 	return &blockingMockCodec{
 		mockCodec: *md,
+		ch:        make(chan struct{}),
 	}
 }
 
 func (md *blockingMockCodec) Decode(i interface{}) error {
+	if len(md.elems) == 0 {
+		<-md.ch
+	}
 	return md.decode(i)
+}
+
+func (md *blockingMockCodec) Encode(i interface{}) error {
+	if len(md.elems) == 0 {
+		defer func() {
+			md.ch <- struct{}{}
+		}()
+	}
+	return md.encode(i)
 }
 
 type mockErrorUnwrapper struct{}

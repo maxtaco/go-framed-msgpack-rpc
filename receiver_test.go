@@ -11,14 +11,14 @@ import (
 
 func testReceive(t *testing.T, callCh chan callRetrieval, p *Protocol, args ...interface{}) error {
 	receiveIn := newBlockingMockCodec()
-	receiveOut := newBlockingMockCodec()
+	receiveOut := newMockCodec()
 
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
 	r := newReceiveHandler(receiveOut, receiveIn, callCh, logFactory.NewLog(nil), nil)
 	if p != nil {
 		r.RegisterProtocol(*p)
 	}
-	receiveIn.Encode(args)
+	go receiveIn.Encode(args)
 
 	err := r.Receive(len(args))
 	if err != nil {

@@ -49,7 +49,7 @@ func TestInvalidMessage(t *testing.T) {
 	assert.Error(t, err, "Expected error decoding past end")
 }
 
-func TestDecodeError(t *testing.T) {
+func TestMessageDecodeError(t *testing.T) {
 	m := &message{remainingFields: 2}
 	md := newMockCodec(
 		123,
