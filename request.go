@@ -189,5 +189,5 @@ func newRequest(methodType MethodType) request {
 	case MethodCancel:
 		return newCancelRequest()
 	}
-	return &requestImpl{}
+	return nil
 }

@@ -16,8 +16,7 @@ type dispatch struct {
 	writer encoder
 	reader byteReadingDecoder
 
-	// TODO: Use a separate type for seqid.
-	seqid int
+	seqid seqNumber
 
 	// Stops all loops when closed
 	stopCh chan struct{}
@@ -62,7 +61,7 @@ type call struct {
 	ch             chan error
 	doneCh         chan struct{}
 	method         string
-	seqid          int
+	seqid          seqNumber
 	arg            interface{}
 	res            interface{}
 	errorUnwrapper ErrorUnwrapper
@@ -92,7 +91,7 @@ func (c *call) Finish(err error) {
 }
 
 func (d *dispatch) callLoop() {
-	calls := make(map[int]*call)
+	calls := make(map[seqNumber]*call)
 	for {
 		select {
 		case <-d.stopCh:
@@ -111,7 +110,7 @@ func (d *dispatch) callLoop() {
 	}
 }
 
-func (d *dispatch) handleCall(calls map[int]*call, c *call) {
+func (d *dispatch) handleCall(calls map[seqNumber]*call, c *call) {
 	seqid := d.nextSeqid()
 	c.seqid = seqid
 	calls[c.seqid] = c
@@ -125,17 +124,16 @@ func (d *dispatch) handleCall(calls map[int]*call, c *call) {
 	go func() {
 		select {
 		case <-c.ctx.Done():
+			c.ch <- newCanceledError(c.method, seqid)
 			v := []interface{}{MethodCancel, seqid, c.method}
-			// Dispatch cancellation before returning to avoid race
 			err := d.writer.Encode(v)
 			d.log.ClientCancel(seqid, c.method, err)
-			c.ch <- newCanceledError(c.method, seqid)
 		case <-c.doneCh:
 		}
 	}()
 }
 
-func (d *dispatch) nextSeqid() int {
+func (d *dispatch) nextSeqid() seqNumber {
 	ret := d.seqid
 	d.seqid++
 	return ret
