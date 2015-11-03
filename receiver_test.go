@@ -31,7 +31,7 @@ func testReceive(t *testing.T, callCh chan callRetrieval, p *Protocol, args ...i
 		require.Equal(t, MethodResponse, m, "Expected a response")
 		decErr = receiveOut.Decode(&seqno)
 		require.Nil(t, decErr, "Expected decode to succeed")
-		require.Equal(t, (seqNumber)(0), seqno, "Expected sequence number to be 0")
+		require.Equal(t, seqNumber(0), seqno, "Expected sequence number to be 0")
 		decErr = receiveOut.Decode(&respErrStr)
 		require.Nil(t, decErr, "Expected decode to succeed")
 		decErr = receiveOut.Decode(&res)
@@ -53,7 +53,7 @@ func TestReceiveInvalidType(t *testing.T) {
 		make(chan callRetrieval),
 		nil,
 		"hello",
-		(seqNumber)(0),
+		seqNumber(0),
 		"invalid",
 		new(interface{}),
 	)
@@ -66,7 +66,7 @@ func TestReceiveInvalidMethodType(t *testing.T) {
 		make(chan callRetrieval),
 		nil,
 		(MethodType)(999),
-		(seqNumber)(0),
+		seqNumber(0),
 		"invalid",
 		new(interface{}),
 	)
@@ -79,7 +79,7 @@ func TestReceiveInvalidProtocol(t *testing.T) {
 		make(chan callRetrieval),
 		nil,
 		MethodCall,
-		(seqNumber)(0),
+		seqNumber(0),
 		"nonexistent.broken",
 		new(interface{}),
 	)
@@ -95,7 +95,7 @@ func TestReceiveInvalidMethod(t *testing.T) {
 			Methods: make(map[string]ServeHandlerDescription),
 		},
 		MethodCall,
-		(seqNumber)(0),
+		seqNumber(0),
 		"existent.invalid",
 		new(interface{}),
 	)
@@ -108,7 +108,7 @@ func TestReceiveWrongMessageLength(t *testing.T) {
 		make(chan callRetrieval),
 		nil,
 		MethodCall,
-		(seqNumber)(0),
+		seqNumber(0),
 		"invalid",
 	)
 	require.EqualError(t, err, "dispatcher error: wrong number of fields for message (got n=3, expected n=4)", "Expected error attempting to call a nonexistent method")
@@ -122,7 +122,7 @@ func TestReceiveResponse(t *testing.T) {
 			callCh,
 			nil,
 			MethodResponse,
-			(seqNumber)(0),
+			seqNumber(0),
 			"",
 			"hi",
 		)
@@ -144,7 +144,7 @@ func TestReceiveResponseWrongSize(t *testing.T) {
 		make(chan callRetrieval),
 		nil,
 		MethodResponse,
-		(seqNumber)(0),
+		seqNumber(0),
 		"",
 	)
 	require.EqualError(t, err, "dispatcher error: wrong number of fields for message (got n=3, expected n=4)", "Expected error attempting to receive the wrong size of response")
@@ -158,7 +158,7 @@ func TestReceiveResponseNilCall(t *testing.T) {
 			callCh,
 			nil,
 			MethodResponse,
-			(seqNumber)(0),
+			seqNumber(0),
 			"",
 			"hi",
 		)
@@ -180,7 +180,7 @@ func TestReceiveResponseError(t *testing.T) {
 			callCh,
 			nil,
 			MethodResponse,
-			(seqNumber)(0),
+			seqNumber(0),
 			// Wrong type for error, should be string
 			32,
 			"hi",

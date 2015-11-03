@@ -262,6 +262,8 @@ func (a TestClient) LongCallResult(ctx context.Context) (ret int, err error) {
 	return
 }
 
+// mockCodec uses a slice instead of a simple channel wrapper because
+// we need to be able to peek at the head element without removing it
 type mockCodec struct {
 	elems []interface{}
 	mtx   sync.Mutex
@@ -277,14 +279,7 @@ func newMockCodec(elems ...interface{}) *mockCodec {
 	return md
 }
 
-func (md *mockCodec) NumElements() int {
-	return len(md.elems)
-}
-
 func (md *mockCodec) Decode(i interface{}) error {
-	if len(md.elems) == 0 {
-		return errors.New("Tried to decode too many elements")
-	}
 	return md.decode(i)
 }
 
@@ -317,6 +312,9 @@ func (md *mockCodec) encode(i interface{}, ch chan struct{}) error {
 func (md *mockCodec) decode(i interface{}) error {
 	md.mtx.Lock()
 	defer md.mtx.Unlock()
+	if len(md.elems) == 0 {
+		return errors.New("Tried to decode too many elements")
+	}
 	v := reflect.ValueOf(i).Elem()
 	d := reflect.ValueOf(md.elems[0])
 	if d.IsValid() {
