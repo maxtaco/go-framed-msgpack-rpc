@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/ugorji/go/codec"
 )
 
@@ -22,28 +22,30 @@ func TestCodec(t *testing.T) {
 
 	var i int = math.MaxInt32
 	err := enc.Encode(i)
-	assert.Nil(t, err, "expected encoding to succeed")
-	assert.Equal(t, 5, len(buf.Bytes()), "expected buffer to contain bytes")
+	require.Nil(t, err, "expected encoding to succeed")
+	require.Equal(t, 5, len(buf.Bytes()), "expected buffer to contain bytes")
 
 	var targetInt int
 	err = dec.Decode(&targetInt)
-	assert.Nil(t, err, "expected decoding to succeed")
-	assert.Equal(t, math.MaxInt32, targetInt, "expected codec to successfully decode int")
-	assert.Equal(t, 0, len(buf.Bytes()), "expected buffer to be empty")
+	require.Nil(t, err, "expected decoding to succeed")
+	require.Equal(t, math.MaxInt32, targetInt, "expected codec to successfully decode int")
+	require.Equal(t, 0, len(buf.Bytes()), "expected buffer to be empty")
 
 	var targetString string
 	enc.Encode(i)
-	assert.Equal(t, 5, len(buf.Bytes()), "expected buffer to contain bytes")
+	require.Equal(t, 5, len(buf.Bytes()), "expected buffer to contain bytes")
 	err = dec.Decode(&targetString)
-	assert.EqualError(t, err, "readContainerLen: Unrecognized descriptor byte: hex: ce, dec: 206", "expected error while decoding")
-	assert.Equal(t, 4, len(buf.Bytes()), "expected buffer to have bytes")
+	require.Error(t, err, "expected error while decoding")
+	require.Contains(t, err.Error(), "Unrecognized descriptor byte", "expected error while decoding")
+	require.Equal(t, 4, len(buf.Bytes()), "expected buffer to have bytes")
 	err = dec.Decode(&targetString)
-	assert.EqualError(t, err, "readContainerLen: Unrecognized descriptor byte: hex: ce, dec: 206", "expected error while decoding")
-	assert.Equal(t, 4, len(buf.Bytes()), "expected buffer to have bytes")
+	require.Error(t, err, "expected error while decoding")
+	require.Contains(t, err.Error(), "Unrecognized descriptor byte", "expected error while decoding")
+	require.Equal(t, 4, len(buf.Bytes()), "expected buffer to have bytes")
 
 	targetInt = 0
 	err = dec.Decode(&targetInt)
-	assert.Nil(t, err, "expected decoding to succeed")
-	assert.Equal(t, math.MaxInt32, targetInt, "expected codec to successfully decode int")
-	assert.Equal(t, 0, len(buf.Bytes()), "expected buffer to be empty")
+	require.Nil(t, err, "expected decoding to succeed")
+	require.Equal(t, math.MaxInt32, targetInt, "expected codec to successfully decode int")
+	require.Equal(t, 0, len(buf.Bytes()), "expected buffer to be empty")
 }

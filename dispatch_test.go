@@ -4,7 +4,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 )
 
@@ -22,7 +22,7 @@ func dispatchTestCall(t *testing.T) (dispatcher, chan callRetrieval, chan error)
 	// Necessary to ensure the call is far enough along to
 	// be ready to respond
 	decoderErr := decodeToNull(dispatchOut, &message{remainingFields: 4})
-	assert.Nil(t, decoderErr, "Expected no error")
+	require.Nil(t, decoderErr, "Expected no error")
 	return d, callCh, done
 }
 
@@ -32,11 +32,11 @@ func TestDispatchSuccessfulCall(t *testing.T) {
 	ch := make(chan *call)
 	callCh <- callRetrieval{0, ch}
 	c := <-ch
-	assert.NotNil(t, c, "Expected c not to be nil")
+	require.NotNil(t, c, "Expected c not to be nil")
 
 	c.Finish(nil)
 	err := <-done
-	assert.Nil(t, err, "Expected no error")
+	require.Nil(t, err, "Expected no error")
 
 	closed := d.Close(nil)
 	<-closed
@@ -48,5 +48,5 @@ func TestDispatchEOF(t *testing.T) {
 	closed := d.Close(nil)
 	<-closed
 	err := <-done
-	assert.Equal(t, io.EOF, err, "Expected EOF")
+	require.Equal(t, io.EOF, err, "Expected EOF")
 }

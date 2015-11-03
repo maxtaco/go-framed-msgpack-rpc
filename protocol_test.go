@@ -6,7 +6,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 )
 
@@ -28,7 +28,7 @@ func prepServer(listener chan error) error {
 
 func prepClient(t *testing.T) (TestClient, net.Conn) {
 	c, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", testPort))
-	assert.Nil(t, err, "a dialer error occurred")
+	require.Nil(t, err, "a dialer error occurred")
 
 	xp := NewTransport(c, nil, nil)
 	return TestClient{GenericClient: NewClient(xp, nil)}, c
@@ -44,7 +44,7 @@ func prepTest(t *testing.T) (TestClient, chan error, net.Conn) {
 func endTest(t *testing.T, c net.Conn, listener chan error) {
 	c.Close()
 	err := <-listener
-	assert.EqualError(t, err, io.EOF.Error(), "expected EOF")
+	require.EqualError(t, err, io.EOF.Error(), "expected EOF")
 }
 
 func TestCall(t *testing.T) {
@@ -54,8 +54,8 @@ func TestCall(t *testing.T) {
 	B := 34
 	for A := 10; A < 23; A += 2 {
 		res, err := cli.Add(context.Background(), AddArgs{A: A, B: B})
-		assert.Nil(t, err, "an error occurred while adding parameters")
-		assert.Equal(t, A+B, res, "Result should be the two parameters added together")
+		require.Nil(t, err, "an error occurred while adding parameters")
+		require.Equal(t, A+B, res, "Result should be the two parameters added together")
 	}
 }
 
@@ -64,7 +64,7 @@ func TestBrokenCall(t *testing.T) {
 	defer endTest(t, conn, listener)
 
 	err := cli.Broken()
-	assert.Error(t, err, "Called nonexistent method, expected error")
+	require.Error(t, err, "Called nonexistent method, expected error")
 }
 
 func TestNotify(t *testing.T) {
@@ -74,11 +74,11 @@ func TestNotify(t *testing.T) {
 	pi := 31415
 
 	err := cli.UpdateConstants(context.Background(), Constants{Pi: pi})
-	assert.Nil(t, err, "Unexpected error on notify: %v", err)
+	require.Nil(t, err, "Unexpected error on notify: %v", err)
 
 	constants, err := cli.GetConstants(context.Background())
-	assert.Nil(t, err, "Unexpected error on GetConstants: %v", err)
-	assert.Equal(t, pi, constants.Pi, "we set the constant properly via Notify")
+	require.Nil(t, err, "Unexpected error on GetConstants: %v", err)
+	require.Equal(t, pi, constants.Pi, "we set the constant properly via Notify")
 }
 
 func TestLongCall(t *testing.T) {
@@ -86,8 +86,8 @@ func TestLongCall(t *testing.T) {
 	defer endTest(t, conn, listener)
 
 	longResult, err := cli.LongCall(context.Background())
-	assert.Nil(t, err, "call should have succeeded")
-	assert.Equal(t, longResult, 100, "call should have succeeded")
+	require.Nil(t, err, "call should have succeeded")
+	require.Equal(t, longResult, 100, "call should have succeeded")
 }
 
 func TestLongCallCancel(t *testing.T) {
@@ -103,10 +103,10 @@ func TestLongCallCancel(t *testing.T) {
 	})
 	cancel()
 	<-wait
-	assert.Error(t, err, "call should be canceled")
-	assert.Equal(t, -1, longResult, "call should be canceled")
+	require.EqualError(t, err, "call canceled: method test.1.testp.LongCall, seqid 0", "call should be canceled")
+	require.Equal(t, 0, longResult, "call should be canceled")
 
 	longResult, err = cli.LongCallResult(context.Background())
-	assert.Nil(t, err, "call should have succeeded")
-	assert.Equal(t, -1, longResult, "canceled call should have set the result to canceled")
+	require.Nil(t, err, "call should have succeeded")
+	require.Equal(t, -1, longResult, "canceled call should have set the result to canceled")
 }

@@ -3,7 +3,7 @@ package rpc
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func testSplit(t *testing.T, prot string, method string) {
@@ -11,8 +11,8 @@ func testSplit(t *testing.T, prot string, method string) {
 
 	splitProt, splitMethod := splitMethodName(name)
 
-	assert.Equal(t, prot, splitProt, "expected the protocol to match")
-	assert.Equal(t, method, splitMethod, "expected the method name to match")
+	require.Equal(t, prot, splitProt, "expected the protocol to match")
+	require.Equal(t, method, splitMethod, "expected the method name to match")
 }
 
 func TestSplitMethodName(t *testing.T) {
