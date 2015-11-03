@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"reflect"
+	"sync"
 	"time"
 
 	"golang.org/x/net/context"
@@ -247,6 +248,7 @@ func (a TestClient) LongCallResult(ctx context.Context) (ret int, err error) {
 
 type mockCodec struct {
 	elems []interface{}
+	mtx   sync.Mutex
 }
 
 func newMockCodec(elems ...interface{}) *mockCodec {
@@ -276,15 +278,20 @@ func (md *mockCodec) ReadByte() (b byte, err error) {
 }
 
 func (md *mockCodec) Encode(i interface{}) error {
-	return md.encode(i)
+	return md.encode(i, nil)
 }
 
-func (md *mockCodec) encode(i interface{}) error {
+func (md *mockCodec) encode(i interface{}, ch chan struct{}) error {
 	v := reflect.ValueOf(i)
 	if v.Kind() == reflect.Slice {
 		for i := 0; i < v.Len(); i++ {
 			e := v.Index(i).Interface()
+			md.mtx.Lock()
 			md.elems = append(md.elems, e)
+			md.mtx.Unlock()
+			if ch != nil {
+				ch <- struct{}{}
+			}
 		}
 		return nil
 	}
@@ -292,13 +299,17 @@ func (md *mockCodec) encode(i interface{}) error {
 }
 
 func (md *mockCodec) decode(i interface{}) error {
+	md.mtx.Lock()
+	defer md.mtx.Unlock()
 	v := reflect.ValueOf(i).Elem()
 	d := reflect.ValueOf(md.elems[0])
-	if !d.Type().AssignableTo(v.Type()) {
-		return fmt.Errorf("Tried to decode incorrect type. Expected: %v, actual: %v", v.Type(), d.Type())
+	if d.IsValid() {
+		if !d.Type().AssignableTo(v.Type()) {
+			return fmt.Errorf("Tried to decode incorrect type. Expected: %v, actual: %v", v.Type(), d.Type())
+		}
+		v.Set(d)
 	}
 	md.elems = md.elems[1:]
-	v.Set(d)
 	return nil
 }
 
@@ -316,19 +327,12 @@ func newBlockingMockCodec(elems ...interface{}) *blockingMockCodec {
 }
 
 func (md *blockingMockCodec) Decode(i interface{}) error {
-	if len(md.elems) == 0 {
-		<-md.ch
-	}
+	<-md.ch
 	return md.decode(i)
 }
 
 func (md *blockingMockCodec) Encode(i interface{}) error {
-	if len(md.elems) == 0 {
-		defer func() {
-			md.ch <- struct{}{}
-		}()
-	}
-	return md.encode(i)
+	return md.encode(i, md.ch)
 }
 
 type mockErrorUnwrapper struct{}

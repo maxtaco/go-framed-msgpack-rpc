@@ -11,7 +11,7 @@ import (
 
 func testReceive(t *testing.T, callCh chan callRetrieval, p *Protocol, args ...interface{}) error {
 	receiveIn := newBlockingMockCodec()
-	receiveOut := newMockCodec()
+	receiveOut := newBlockingMockCodec()
 
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
 	r := newReceiveHandler(receiveOut, receiveIn, callCh, logFactory.NewLog(nil), nil)
@@ -20,16 +20,12 @@ func testReceive(t *testing.T, callCh chan callRetrieval, p *Protocol, args ...i
 	}
 	go receiveIn.Encode(args)
 
-	err := r.Receive(len(args))
-	if err != nil {
-		return err
-	}
-
-	if receiveOut.NumElements() > 0 {
-		require.Equal(t, 4, receiveOut.NumElements(), "Expected a full response")
+	errCh := make(chan error)
+	go func() {
 		var m MethodType
 		var seqno seqNumber
 		var respErrStr string
+		var res interface{}
 		decErr := receiveOut.Decode(&m)
 		require.Nil(t, decErr, "Expected decode to succeed")
 		require.Equal(t, MethodResponse, m, "Expected a response")
@@ -38,9 +34,17 @@ func testReceive(t *testing.T, callCh chan callRetrieval, p *Protocol, args ...i
 		require.Equal(t, (seqNumber)(0), seqno, "Expected sequence number to be 0")
 		decErr = receiveOut.Decode(&respErrStr)
 		require.Nil(t, decErr, "Expected decode to succeed")
-		return errors.New(respErrStr)
+		decErr = receiveOut.Decode(&res)
+		require.Nil(t, decErr, "Expected decode to succeed")
+		errCh <- errors.New(respErrStr)
+	}()
+
+	err := r.Receive(len(args))
+	if err != nil {
+		return err
 	}
-	return nil
+
+	return <-errCh
 }
 
 func TestReceiveInvalidType(t *testing.T) {
