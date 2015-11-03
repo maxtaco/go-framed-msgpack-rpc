@@ -38,7 +38,7 @@ func (s *server) Run(ready chan struct{}, externalListener chan error) (err erro
 		}
 		xp := NewTransport(c, lf, nil)
 		srv := NewServer(xp, nil)
-		srv.Register(newTestProtocol(&testProtocol{c, Constants{}, 0}))
+		srv.Register(createTestProtocol(newTestProtocol(c)))
 		srv.AddCloseListener(closeListener)
 		srv.Run(true)
 	}
@@ -49,6 +49,16 @@ type testProtocol struct {
 	c              net.Conn
 	constants      Constants
 	longCallResult int
+	notifyCh       chan struct{}
+}
+
+func newTestProtocol(c net.Conn) *testProtocol {
+	return &testProtocol{
+		c:              c,
+		constants:      Constants{},
+		longCallResult: 0,
+		notifyCh:       make(chan struct{}, 1),
+	}
 }
 
 func (a *testProtocol) Add(args *AddArgs) (ret int, err error) {
@@ -69,14 +79,19 @@ func (a *testProtocol) DivMod(args *DivModArgs) (ret *DivModRes, err error) {
 
 func (a *testProtocol) UpdateConstants(args *Constants) error {
 	a.constants = *args
+	a.notifyCh <- struct{}{}
 	return nil
 }
 
 func (a *testProtocol) GetConstants() (*Constants, error) {
+	<-a.notifyCh
 	return &a.constants, nil
 }
 
 func (a *testProtocol) LongCall(ctx context.Context) (int, error) {
+	defer func() {
+		a.notifyCh <- struct{}{}
+	}()
 	a.longCallResult = 0
 	for i := 0; i < 100; i++ {
 		select {
@@ -92,6 +107,7 @@ func (a *testProtocol) LongCall(ctx context.Context) (int, error) {
 }
 
 func (a *testProtocol) LongCallResult(ctx context.Context) (int, error) {
+	<-a.notifyCh
 	return a.longCallResult, nil
 }
 
@@ -126,7 +142,7 @@ type TestInterface interface {
 	LongCallResult(context.Context) (int, error)
 }
 
-func newTestProtocol(i TestInterface) Protocol {
+func createTestProtocol(i TestInterface) Protocol {
 	return Protocol{
 		Name: "test.1.testp",
 		Methods: map[string]ServeHandlerDescription{
