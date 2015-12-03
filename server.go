@@ -33,7 +33,7 @@ func (s *Server) AddCloseListener(ch chan error) error {
 // https://github.com/keybase/go-framed-msgpack-rpc/issues/39 .
 func (s *Server) Run(bg bool) error {
 	if bg {
-		return s.xp.Run()
+		return s.xp.RunAsync()
 	}
-	return s.xp.RunAsync()
+	return s.xp.Run()
 }
