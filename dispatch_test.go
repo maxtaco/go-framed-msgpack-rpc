@@ -98,3 +98,22 @@ func TestDispatchEOF(t *testing.T) {
 	err := <-done
 	require.Equal(t, io.EOF, err, "Expected EOF")
 }
+
+func TestDispatchCallAfterClose(t *testing.T) {
+	d, callCh, done := dispatchTestCall(t)
+
+	ch := make(chan *call)
+	callCh <- callRetrieval{0, ch}
+	c := <-ch
+	c.Finish(nil)
+
+	err := <-done
+	closed := d.Close(nil)
+	<-closed
+
+	done = runInBg(func() error {
+		return d.Call(context.Background(), "whatever", new(interface{}), new(interface{}), nil)
+	})
+	err = <-done
+	require.Equal(t, DisconnectedError{}, err)
+}
