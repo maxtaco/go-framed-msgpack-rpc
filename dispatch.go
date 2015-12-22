@@ -14,7 +14,6 @@ type dispatcher interface {
 
 type dispatch struct {
 	writer encoder
-	reader byteReadingDecoder
 
 	seqid seqNumber
 
@@ -35,10 +34,9 @@ type dispatch struct {
 	log LogInterface
 }
 
-func newDispatch(enc encoder, dec byteReadingDecoder, callRetrievalCh chan callRetrieval, l LogInterface) *dispatch {
+func newDispatch(enc encoder, callRetrievalCh chan callRetrieval, l LogInterface) *dispatch {
 	d := &dispatch{
 		writer:     enc,
-		reader:     dec,
 		callCh:     make(chan *call),
 		callRespCh: make(chan *call),
 		rmCallCh:   callRetrievalCh,

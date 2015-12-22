@@ -6,10 +6,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-type messageHandler struct {
-	dispatchFunc  func() error
-	messageLength int
-}
+type messageHandler func(*RPCCall) error
 
 type task struct {
 	seqid      seqNumber
@@ -17,7 +14,7 @@ type task struct {
 }
 
 type receiver interface {
-	Receive(l int) error
+	Receive(*RPCCall) error
 	RegisterProtocol(Protocol) error
 	Close(err error) chan struct{}
 	AddCloseListener(chan error)
@@ -30,14 +27,13 @@ type callRetrieval struct {
 
 type receiveHandler struct {
 	writer encoder
-	reader byteReadingDecoder
 
 	protocols     map[string]Protocol
 	wrapErrorFunc WrapErrorFunc
 	tasks         map[int]context.CancelFunc
 
 	listenerMtx sync.Mutex
-	listeners   map[chan error]struct{}
+	listeners   map[chan<- error]struct{}
 
 	// Stops all loops when closed
 	stopCh chan struct{}
@@ -55,13 +51,12 @@ type receiveHandler struct {
 	messageHandlers map[MethodType]messageHandler
 }
 
-func newReceiveHandler(enc encoder, dec byteReadingDecoder, rmCallCh chan callRetrieval, l LogInterface, wef WrapErrorFunc) *receiveHandler {
+func newReceiveHandler(enc encoder, rmCallCh chan callRetrieval, l LogInterface, wef WrapErrorFunc) *receiveHandler {
 	r := &receiveHandler{
 		writer:    enc,
-		reader:    dec,
 		protocols: make(map[string]Protocol),
 		tasks:     make(map[int]context.CancelFunc),
-		listeners: make(map[chan error]struct{}),
+		listeners: make(map[chan<- error]struct{}),
 		rmCallCh:  rmCallCh,
 		stopCh:    make(chan struct{}),
 		closedCh:  make(chan struct{}),
@@ -74,10 +69,10 @@ func newReceiveHandler(enc encoder, dec byteReadingDecoder, rmCallCh chan callRe
 		wrapErrorFunc: wef,
 	}
 	r.messageHandlers = map[MethodType]messageHandler{
-		MethodNotify:   {dispatchFunc: r.receiveNotify, messageLength: 3},
-		MethodCall:     {dispatchFunc: r.receiveCall, messageLength: 4},
-		MethodResponse: {dispatchFunc: r.receiveResponse, messageLength: 4},
-		MethodCancel:   {dispatchFunc: r.receiveCancel, messageLength: 3},
+		MethodNotify:   r.receiveNotify,
+		MethodCall:     r.receiveCall,
+		MethodResponse: r.receiveResponse,
+		MethodCancel:   r.receiveCancel,
 	}
 	go r.taskLoop()
 	return r
@@ -103,90 +98,50 @@ func (r *receiveHandler) taskLoop() {
 	}
 }
 
-func (r *receiveHandler) findServeHandler(n string) (*ServeHandlerDescription, WrapErrorFunc, error) {
-	p, m := splitMethodName(n)
-	prot, found := r.protocols[p]
-	if !found {
-		return nil, r.wrapErrorFunc, ProtocolNotFoundError{p}
-	}
-	srv, found := prot.Methods[m]
-	if !found {
-		return nil, r.wrapErrorFunc, MethodNotFoundError{p, m}
-	}
-	return &srv, prot.WrapError, nil
-}
-
-func (d *receiveHandler) Receive(length int) error {
-	var requestType MethodType
-	if err := d.reader.Decode(&requestType); err != nil {
-		return err
-	}
-	handler, ok := d.messageHandlers[requestType]
+func (d *receiveHandler) Receive(rpc *RPCCall) error {
+	handler, ok := d.messageHandlers[rpc.Type()]
 	if !ok {
 		return NewDispatcherError("invalid message type")
 	}
-	if length != handler.messageLength {
-		return NewDispatcherError("wrong number of fields for message (got n=%d, expected n=%d)", length, handler.messageLength)
-
-	}
-	return handler.dispatchFunc()
+	return handler(rpc)
 }
 
-func (r *receiveHandler) receiveNotify() (err error) {
-	req := newRequest(MethodNotify)
+func (r *receiveHandler) receiveNotify(rpc *RPCCall) error {
+	req := newRequest(rpc)
 	return r.handleReceiveDispatch(req)
 }
 
-func (r *receiveHandler) receiveCall() error {
-	req := newRequest(MethodCall)
+func (r *receiveHandler) receiveCall(rpc *RPCCall) error {
+	req := newRequest(rpc)
 	return r.handleReceiveDispatch(req)
 }
 
-func (r *receiveHandler) receiveCancel() (err error) {
-	req := newRequest(MethodCancel)
-	if err := decodeIntoMessage(r.reader, req.Message()); err != nil {
-		return err
-	}
+func (r *receiveHandler) receiveCancel(rpc *RPCCall) error {
+	req := newRequest(rpc)
 	req.LogInvocation(r.log, nil, nil)
-	r.taskCancelCh <- req.Message().seqno
+	r.taskCancelCh <- rpc.SeqNo()
 	return nil
 }
 
 func (r *receiveHandler) handleReceiveDispatch(req request) error {
-	if err := decodeIntoMessage(r.reader, req.Message()); err != nil {
-		return err
-	}
-
-	m := req.Message()
-	serveHandler, wrapErrorFunc, se := r.findServeHandler(m.method)
+	serveHandler, wrapErrorFunc, se := r.findServeHandler(req.Name())
 	if se != nil {
-		m.err = wrapError(wrapErrorFunc, se)
-		if err := decodeToNull(r.reader, m); err != nil {
-			return err
-		}
 		req.LogInvocation(r.log, se, nil)
 		return req.Reply(r.writer, r.log)
 	}
-	r.taskBeginCh <- &task{m.seqno, req.CancelFunc()}
-	req.Serve(r.reader, r.writer, serveHandler, wrapErrorFunc, r.log)
+	r.taskBeginCh <- &task{req.SeqNo(), req.CancelFunc()}
+	req.Serve(r.writer, serveHandler, wrapErrorFunc, r.log)
 	return nil
 }
 
-func (r *receiveHandler) receiveResponse() (err error) {
-	m := &message{remainingFields: 3}
-
-	if err = decodeMessage(r.reader, m, &m.seqno); err != nil {
-		return err
-	}
-
+func (r *receiveHandler) receiveResponse(rpc *RPCCall) (err error) {
 	ch := make(chan *call)
-	r.rmCallCh <- callRetrieval{m.seqno, ch}
+	r.rmCallCh <- callRetrieval{rpc.SeqNo(), ch}
 	call := <-ch
 
 	if call == nil {
-		r.log.UnexpectedReply(m.seqno)
-		decodeToNull(r.reader, m)
-		return CallNotFoundError{m.seqno}
+		r.log.UnexpectedReply(rpc.SeqNo())
+		return CallNotFoundError{rpc.SeqNo()}
 	}
 
 	var apperr error
@@ -216,22 +171,13 @@ func (r *receiveHandler) receiveResponse() (err error) {
 	return
 }
 
-func (r *receiveHandler) RegisterProtocol(p Protocol) (err error) {
-	if _, found := r.protocols[p.Name]; found {
-		err = AlreadyRegisteredError{p.Name}
-	} else {
-		r.protocols[p.Name] = p
-	}
-	return err
-}
-
 func (r *receiveHandler) Close(err error) chan struct{} {
 	close(r.stopCh)
 	r.broadcast(err)
 	return r.closedCh
 }
 
-func (r *receiveHandler) AddCloseListener(ch chan error) {
+func (r *receiveHandler) AddCloseListener(ch chan<- error) {
 	r.listenerMtx.Lock()
 	defer r.listenerMtx.Unlock()
 	r.listeners[ch] = struct{}{}

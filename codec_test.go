@@ -2,6 +2,8 @@ package rpc
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"math"
 	"testing"
 
@@ -48,4 +50,27 @@ func TestCodec(t *testing.T) {
 	require.Nil(t, err, "expected decoding to succeed")
 	require.Equal(t, math.MaxInt32, targetInt, "expected codec to successfully decode int")
 	require.Equal(t, 0, len(buf.Bytes()), "expected buffer to be empty")
+}
+
+func TestCodecStruct(t *testing.T) {
+	var buf bytes.Buffer
+	mh := &codec.MsgpackHandle{
+		WriteExt: true,
+	}
+	enc := codec.NewEncoder(&buf, mh)
+	dec := codec.NewDecoder(&buf, mh)
+
+	v := []interface{}{MethodCall, 999, "hello", new(interface{})}
+
+	err := enc.Encode(v)
+	require.Nil(t, err, "expected encoding to succeed")
+	require.Equal(t, 12, len(buf.Bytes()), "expected buffer to contain bytes")
+	fmt.Printf("bytes: %+v\n", buf.Bytes())
+
+	c := RPCCall{}
+	err = dec.Decode(&c)
+	require.Equal(t, MethodCall, c.Type)
+	require.Equal(t, 999, c.SeqNo())
+	require.Equal(t, "hello", c.Name())
+	require.Equal(t, nil, c.Arg())
 }

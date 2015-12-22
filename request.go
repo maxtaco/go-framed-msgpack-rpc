@@ -7,22 +7,18 @@ import (
 )
 
 type request interface {
-	Message() *message
+	RPC
 	CancelFunc() context.CancelFunc
 	Reply(encoder, LogInterface) error
-	Serve(byteReadingDecoder, encoder, *ServeHandlerDescription, WrapErrorFunc, LogInterface)
+	Serve(encoder, *ServeHandlerDescription, WrapErrorFunc, LogInterface)
 	LogInvocation(log LogInterface, err error, arg interface{})
 	LogCompletion(log LogInterface, err error)
 }
 
 type requestImpl struct {
-	message
+	*RPCCall
 	ctx        context.Context
 	cancelFunc context.CancelFunc
-}
-
-func (req *requestImpl) Message() *message {
-	return &req.message
 }
 
 func (req *requestImpl) CancelFunc() context.CancelFunc {
@@ -35,32 +31,19 @@ func (r *requestImpl) Reply(encoder, LogInterface) error              { return n
 func (r *requestImpl) Serve(byteReadingDecoder, encoder, *ServeHandlerDescription, WrapErrorFunc, LogInterface) {
 }
 
-func (req *requestImpl) getArg(receiver decoder, handler *ServeHandlerDescription) (interface{}, error) {
-	arg := handler.MakeArg()
-	err := decodeMessage(receiver, req.Message(), arg)
-	return arg, err
-}
-
 type callRequest struct {
 	requestImpl
 }
 
-func newCallRequest() *callRequest {
+func newCallRequest(rpc *RPCCall) *callRequest {
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &callRequest{
+	return &callRequest{
 		requestImpl: requestImpl{
-			message: message{
-				remainingFields: 3,
-			},
+			RPCCall:    rpc,
 			ctx:        ctx,
 			cancelFunc: cancel,
 		},
 	}
-	r.decodeSlots = []interface{}{
-		&r.seqno,
-		&r.method,
-	}
-	return r
 }
 
 func (r *callRequest) LogInvocation(log LogInterface, err error, arg interface{}) {
@@ -78,7 +61,7 @@ func (r *callRequest) Reply(enc encoder, log LogInterface) error {
 		// TODO: Use newCanceledError and log.Info:
 		// https://github.com/keybase/go-framed-msgpack-rpc/issues/29
 		// .
-		err = fmt.Errorf("call canceled for seqno %d", r.seqno)
+		err = fmt.Errorf("call canceled for seqno %d", r.SeqNo())
 		log.Warning(err.Error())
 	default:
 		v := []interface{}{
@@ -89,16 +72,16 @@ func (r *callRequest) Reply(enc encoder, log LogInterface) error {
 		}
 		err = enc.Encode(v)
 		if err != nil {
-			log.Warning("Reply error for %d: %s", r.seqno, err.Error())
+			log.Warning("Reply error for %d: %s", r.SeqNo(), err.Error())
 		}
 	}
 	return err
 }
 
-func (r *callRequest) Serve(receiver byteReadingDecoder, transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) {
+func (r *callRequest) Serve(transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) {
 
 	prof := log.StartProfiler("serve %s", r.method)
-	arg, err := r.getArg(receiver, handler)
+	arg := r.Arg()
 
 	go func() {
 		r.LogInvocation(log, err, arg)
@@ -119,21 +102,15 @@ type notifyRequest struct {
 	requestImpl
 }
 
-func newNotifyRequest() *notifyRequest {
+func newNotifyRequest(rpc *RPCCall) *notifyRequest {
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &notifyRequest{
+	return &notifyRequest{
 		requestImpl: requestImpl{
-			message: message{
-				remainingFields: 2,
-			},
+			RPCCall:    rpc,
 			ctx:        ctx,
 			cancelFunc: cancel,
 		},
 	}
-	r.decodeSlots = []interface{}{
-		&r.method,
-	}
-	return r
 }
 
 func (r *notifyRequest) LogInvocation(log LogInterface, err error, arg interface{}) {
@@ -144,10 +121,10 @@ func (r *notifyRequest) LogCompletion(log LogInterface, err error) {
 	log.ServerNotifyComplete(r.method, err)
 }
 
-func (r *notifyRequest) Serve(receiver byteReadingDecoder, transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) {
+func (r *notifyRequest) Serve(transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) {
 
 	prof := log.StartProfiler("serve-notify %s", r.method)
-	arg, err := r.getArg(receiver, handler)
+	arg := r.Arg()
 
 	go func() {
 		r.LogInvocation(log, err, arg)
@@ -163,34 +140,27 @@ type cancelRequest struct {
 	requestImpl
 }
 
-func newCancelRequest() *cancelRequest {
-	r := &cancelRequest{
+func newCancelRequest(rpc *RPCCall) *cancelRequest {
+	return &cancelRequest{
 		requestImpl: requestImpl{
-			message: message{
-				remainingFields: 2,
-			},
-			ctx: context.Background(),
+			RPCCall: rpc,
+			ctx:     context.Background(),
 		},
 	}
-	r.decodeSlots = []interface{}{
-		&r.seqno,
-		&r.method,
-	}
-	return r
 }
 
 func (r *cancelRequest) LogInvocation(log LogInterface, err error, arg interface{}) {
 	log.ServerCancelCall(r.seqno, r.method)
 }
 
-func newRequest(methodType MethodType) request {
-	switch methodType {
+func newRequest(rpc *RPCCall) request {
+	switch rpc.Type() {
 	case MethodCall:
-		return newCallRequest()
+		return newCallRequest(rpc)
 	case MethodNotify:
-		return newNotifyRequest()
+		return newNotifyRequest(rpc)
 	case MethodCancel:
-		return newCancelRequest()
+		return newCancelRequest(rpc)
 	}
 	return nil
 }
