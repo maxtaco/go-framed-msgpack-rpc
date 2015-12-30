@@ -1,42 +1,28 @@
 package rpc
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/ugorji/go/codec"
 )
-
-const decoderPoolLength int = 10
-
-type decoderPool chan *codec.Decoder
-
-func makeDecoderPool() decoderPool {
-	p := make(decoderPool, decoderPoolLength)
-
-	for i := 0; i < decoderPoolLength; i++ {
-		p <- codec.NewDecoderBytes([]byte{}, newCodecMsgpackHandle())
-	}
-
-	return p
-}
 
 type packetizer interface {
 	NextFrame() (*RPCCall, error)
 }
 
 type packetHandler struct {
-	dec           *codec.Decoder
-	reader        *bufio.Reader
+	dec           decoder
+	reader        io.Reader
 	frameDecoders decoderPool
 	protocols     *protocolHandler
 	calls         *callContainer
 	mtx           sync.Mutex
 }
 
-func newPacketHandler(reader *bufio.Reader, protocols *protocolHandler, calls *callContainer) *packetHandler {
+func newPacketHandler(reader io.Reader, protocols *protocolHandler, calls *callContainer) *packetHandler {
 	return &packetHandler{
 		reader:        reader,
 		dec:           codec.NewDecoder(reader, newCodecMsgpackHandle()),
@@ -44,16 +30,6 @@ func newPacketHandler(reader *bufio.Reader, protocols *protocolHandler, calls *c
 		protocols:     protocols,
 		calls:         calls,
 	}
-}
-
-func (p *packetHandler) getFrameDecoder(bytes []byte) *codec.Decoder {
-	dec := <-p.frameDecoders
-	dec.ResetBytes(bytes)
-	return dec
-}
-
-func (p *packetHandler) returnFrameDecoder(d *codec.Decoder) {
-	p.frameDecoders <- d
 }
 
 func (p *packetHandler) NextFrame() (*RPCCall, error) {
@@ -76,11 +52,11 @@ func (p *packetHandler) NextFrame() (*RPCCall, error) {
 	if nb < 0x91 || nb > 0x9f {
 		return nil, NewPacketizerError("wrong message structure prefix (%d)", nb)
 	}
-	dec := p.getFrameDecoder(bytes[1:])
-	defer p.returnFrameDecoder(dec)
+	dec := p.frameDecoders.getDecoder(bytes[1:])
+	defer p.frameDecoders.returnDecoder(dec)
 
 	rpc := &RPCCall{}
-	err = rpc.Decode(nb, dec, p.protocols, p.calls)
+	err = rpc.Decode(nb-0x90, dec, p.protocols, p.calls)
 	return rpc, err
 }
 
@@ -95,16 +71,13 @@ func (p *packetHandler) loadNextFrame() ([]byte, error) {
 		return nil, err
 	}
 
-	bytes, err := p.reader.Peek(l)
+	bytes := make([]byte, l)
+	len, err := p.reader.Read(bytes)
 	if err != nil {
 		return nil, err
 	}
-	discarded, err := p.reader.Discard(l)
-	if err != nil {
-		return nil, err
-	}
-	if discarded != l {
-		return nil, errors.New("discarded wrong number of bytes")
+	if len != l {
+		return nil, errors.New("Unable to read desired length")
 	}
 	return bytes, nil
 }

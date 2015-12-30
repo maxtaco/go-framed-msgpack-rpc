@@ -50,7 +50,6 @@ type transport struct {
 	protocols  *protocolHandler
 	calls      *callContainer
 	log        LogInterface
-	wrapError  WrapErrorFunc
 	startCh    chan struct{}
 	stopCh     chan struct{}
 }
@@ -68,7 +67,6 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 	ret := &transport{
 		cdec:      cdec,
 		log:       log,
-		wrapError: wef,
 		startCh:   startCh,
 		stopCh:    make(chan struct{}),
 		protocols: newProtocolHandler(wef),
@@ -126,7 +124,7 @@ func (t *transport) run() (err error) {
 	// Packetize: do work
 	for {
 		var rpc *RPCCall
-		if rpc, err = t.packetizer.NextFrame(); err != nil {
+		if rpc, err = t.packetizer.NextFrame(); err == nil {
 			t.receiver.Receive(rpc)
 			continue
 		}

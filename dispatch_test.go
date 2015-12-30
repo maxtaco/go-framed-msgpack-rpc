@@ -8,12 +8,21 @@ import (
 	"golang.org/x/net/context"
 )
 
-func dispatchTestCallWithContext(t *testing.T, ctx context.Context) (dispatcher, chan callRetrieval, chan error) {
+func decodeToNull(dec decoder, l int) error {
+	for i := 0; i < l; i++ {
+		if err := dec.Decode(new(interface{})); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dispatchTestCallWithContext(t *testing.T, ctx context.Context) (dispatcher, *callContainer, chan error) {
 	dispatchOut := newBlockingMockCodec()
 
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
-	callCh := make(chan callRetrieval)
-	d := newDispatch(dispatchOut, newBlockingMockCodec(), callCh, logFactory.NewLog(nil))
+	calls := newCallContainer()
+	d := newDispatch(dispatchOut, calls, logFactory.NewLog(nil))
 
 	done := runInBg(func() error {
 		return d.Call(ctx, "whatever", new(interface{}), new(interface{}), nil)
@@ -21,21 +30,19 @@ func dispatchTestCallWithContext(t *testing.T, ctx context.Context) (dispatcher,
 
 	// Necessary to ensure the call is far enough along to
 	// be ready to respond
-	decoderErr := decodeToNull(dispatchOut, &message{remainingFields: 4})
+	decoderErr := decodeToNull(dispatchOut, 4)
 	require.Nil(t, decoderErr, "Expected no error")
-	return d, callCh, done
+	return d, calls, done
 }
 
-func dispatchTestCall(t *testing.T) (dispatcher, chan callRetrieval, chan error) {
+func dispatchTestCall(t *testing.T) (dispatcher, *callContainer, chan error) {
 	return dispatchTestCallWithContext(t, context.Background())
 }
 
 func TestDispatchSuccessfulCall(t *testing.T) {
-	d, callCh, done := dispatchTestCall(t)
+	d, calls, done := dispatchTestCall(t)
 
-	ch := make(chan *call)
-	callCh <- callRetrieval{0, ch}
-	c := <-ch
+	c := calls.retrieveCall(0)
 	require.NotNil(t, c, "Expected c not to be nil")
 
 	ok := c.Finish(nil)
@@ -49,11 +56,9 @@ func TestDispatchSuccessfulCall(t *testing.T) {
 
 func TestDispatchCanceledBeforeResult(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	d, callCh, done := dispatchTestCallWithContext(t, ctx)
+	d, calls, done := dispatchTestCallWithContext(t, ctx)
 
-	ch := make(chan *call)
-	callCh <- callRetrieval{0, ch}
-	c := <-ch
+	c := calls.retrieveCall(0)
 	require.NotNil(t, c, "Expected c not to be nil")
 
 	cancel()
@@ -71,11 +76,9 @@ func TestDispatchCanceledBeforeResult(t *testing.T) {
 
 func TestDispatchCanceledAfterResult(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	d, callCh, done := dispatchTestCallWithContext(t, ctx)
+	d, calls, done := dispatchTestCallWithContext(t, ctx)
 
-	ch := make(chan *call)
-	callCh <- callRetrieval{0, ch}
-	c := <-ch
+	c := calls.retrieveCall(0)
 	require.NotNil(t, c, "Expected c not to be nil")
 
 	ok := c.Finish(nil)
@@ -100,11 +103,9 @@ func TestDispatchEOF(t *testing.T) {
 }
 
 func TestDispatchCallAfterClose(t *testing.T) {
-	d, callCh, done := dispatchTestCall(t)
+	d, calls, done := dispatchTestCall(t)
 
-	ch := make(chan *call)
-	callCh <- callRetrieval{0, ch}
-	c := <-ch
+	c := calls.retrieveCall(0)
 	c.Finish(nil)
 
 	err := <-done
@@ -115,5 +116,5 @@ func TestDispatchCallAfterClose(t *testing.T) {
 		return d.Call(context.Background(), "whatever", new(interface{}), new(interface{}), nil)
 	})
 	err = <-done
-	require.Equal(t, DisconnectedError{}, err)
+	require.Equal(t, io.EOF, err)
 }

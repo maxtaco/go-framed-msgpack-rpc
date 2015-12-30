@@ -9,16 +9,15 @@ import (
 	"golang.org/x/net/context"
 )
 
-func testReceive(t *testing.T, callCh chan callRetrieval, p *Protocol, args ...interface{}) error {
-	receiveIn := newBlockingMockCodec()
+func testReceive(t *testing.T, calls *callContainer, p *Protocol, rpc *RPCCall) error {
 	receiveOut := newBlockingMockCodec()
 
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
-	r := newReceiveHandler(receiveOut, receiveIn, callCh, logFactory.NewLog(nil), nil)
+	protHandler := newProtocolHandler(nil)
+	r := newReceiveHandler(receiveOut, protHandler, calls, logFactory.NewLog(nil))
 	if p != nil {
-		r.RegisterProtocol(*p)
+		protHandler.registerProtocol(*p)
 	}
-	go receiveIn.Encode(args)
 
 	errCh := make(chan error)
 	go func() {
@@ -39,7 +38,7 @@ func testReceive(t *testing.T, callCh chan callRetrieval, p *Protocol, args ...i
 		errCh <- errors.New(respErrStr)
 	}()
 
-	err := r.Receive(len(args))
+	err := r.Receive(rpc)
 	if err != nil {
 		return err
 	}

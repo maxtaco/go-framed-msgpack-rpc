@@ -142,13 +142,3 @@ func (d *dispatch) Close(err error) chan struct{} {
 	close(d.stopCh)
 	return d.closedCh
 }
-
-func wrapError(f WrapErrorFunc, e error) interface{} {
-	if f != nil {
-		return f(e)
-	}
-	if e == nil {
-		return nil
-	}
-	return e.Error()
-}

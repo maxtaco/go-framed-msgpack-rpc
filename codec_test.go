@@ -2,13 +2,12 @@ package rpc
 
 import (
 	"bytes"
-	"errors"
-	"fmt"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/ugorji/go/codec"
+	"golang.org/x/net/context"
 )
 
 // This test determines the behavior of codec with respect to advancing the
@@ -60,17 +59,36 @@ func TestCodecStruct(t *testing.T) {
 	enc := codec.NewEncoder(&buf, mh)
 	dec := codec.NewDecoder(&buf, mh)
 
-	v := []interface{}{MethodCall, 999, "hello", new(interface{})}
+	v := []interface{}{MethodCall, 999, "abc.hello", new(interface{})}
 
 	err := enc.Encode(v)
 	require.Nil(t, err, "expected encoding to succeed")
-	require.Equal(t, 12, len(buf.Bytes()), "expected buffer to contain bytes")
-	fmt.Printf("bytes: %+v\n", buf.Bytes())
+	require.Equal(t, 16, len(buf.Bytes()), "expected buffer to contain bytes")
 
+	// Advance the buffer past the msgpack fixarray descriptor byte
+	b, _ := buf.ReadByte()
+	require.Equal(t, 0x94, int(b))
+
+	p := newProtocolHandler(nil)
+	p.registerProtocol(Protocol{
+		Name: "abc",
+		Methods: map[string]ServeHandlerDescription{
+			"hello": {
+				MakeArg: func() interface{} {
+					return nil
+				},
+				Handler: func(context.Context, interface{}) (interface{}, error) {
+					return nil, nil
+				},
+				MethodType: MethodCall,
+			},
+		},
+	})
 	c := RPCCall{}
-	err = dec.Decode(&c)
-	require.Equal(t, MethodCall, c.Type)
-	require.Equal(t, 999, c.SeqNo())
-	require.Equal(t, "hello", c.Name())
+	err = c.Decode(4, dec, p, nil)
+	require.Nil(t, err)
+	require.Equal(t, MethodCall, c.Type())
+	require.Equal(t, seqNumber(999), c.SeqNo())
+	require.Equal(t, "abc.hello", c.Name())
 	require.Equal(t, nil, c.Arg())
 }
