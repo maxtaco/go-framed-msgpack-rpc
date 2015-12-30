@@ -29,7 +29,7 @@ func (req *requestImpl) CancelFunc() context.CancelFunc {
 func (r *requestImpl) LogInvocation(error)                     {}
 func (r *requestImpl) LogCompletion(interface{}, error)        {}
 func (r *requestImpl) Reply(encoder, interface{}, error) error { return nil }
-func (r *requestImpl) Serve(byteReadingDecoder, encoder, *ServeHandlerDescription, WrapErrorFunc) {
+func (r *requestImpl) Serve(encoder, *ServeHandlerDescription, WrapErrorFunc) {
 }
 
 type callRequest struct {
