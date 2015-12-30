@@ -26,27 +26,27 @@ type RPCData interface {
 type BasicRPCData struct{}
 
 func (BasicRPCData) Name() string {
-	panic("not implemented for this type")
+	panic("Name() not implemented for this type")
 }
 
 func (BasicRPCData) Arg() interface{} {
-	panic("not implemented for this type")
+	panic("Arg() not implemented for this type")
 }
 
 func (BasicRPCData) SeqNo() seqNumber {
-	panic("not implemented for this type")
+	panic("SeqNo() not implemented for this type")
 }
 
 func (BasicRPCData) Err() error {
-	panic("not implemented for this type")
+	panic("Err() not implemented for this type")
 }
 
 func (BasicRPCData) Res() interface{} {
-	panic("not implemented for this type")
+	panic("Res() not implemented for this type")
 }
 
 func (BasicRPCData) Call() *call {
-	panic("not implemented for this type")
+	panic("Call() not implemented for this type")
 }
 
 type RPCCallData struct {
@@ -240,6 +240,7 @@ func (r *RPCCancelData) DecodeData(l int, d decoder, p *protocolHandler, _ *call
 }
 
 func (r RPCCancelData) EncodeData(v []interface{}) error {
+	// TODO handle wrapErrorFunc correctly
 	if len(v) != r.DataLength() {
 		return errors.New("wrong message length")
 	}

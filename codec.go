@@ -66,16 +66,29 @@ func newCodecMsgpackHandle() codec.Handle {
 	}
 }
 
+type writeContainer struct {
+	bytes []byte
+	ch    chan error
+}
+
 type framedMsgpackEncoder struct {
 	encoders encoderPool
 	writer   io.Writer
+	writeCh  chan writeContainer
+	doneCh   chan struct{}
+	closedCh chan struct{}
 }
 
 func newFramedMsgpackEncoder(writer io.Writer) *framedMsgpackEncoder {
-	return &framedMsgpackEncoder{
+	e := &framedMsgpackEncoder{
 		encoders: makeEncoderPool(),
 		writer:   writer,
+		writeCh:  make(chan writeContainer),
+		doneCh:   make(chan struct{}),
+		closedCh: make(chan struct{}),
 	}
+	go e.writerLoop()
+	return e
 }
 
 func (e *framedMsgpackEncoder) encodeToBytes(i interface{}) (v []byte, err error) {
@@ -102,6 +115,29 @@ func (e *framedMsgpackEncoder) Encode(i interface{}) error {
 	if err != nil {
 		return err
 	}
-	_, err = e.writer.Write(bytes)
-	return err
+	write := writeContainer{bytes, make(chan error)}
+	select {
+	case <-e.doneCh:
+		return io.EOF
+	case e.writeCh <- write:
+		return <-write.ch
+	}
+}
+
+func (e *framedMsgpackEncoder) writerLoop() {
+	for {
+		select {
+		case <-e.doneCh:
+			close(e.closedCh)
+			return
+		case write := <-e.writeCh:
+			_, err := e.writer.Write(write.bytes)
+			write.ch <- err
+		}
+	}
+}
+
+func (e *framedMsgpackEncoder) Close() <-chan struct{} {
+	close(e.doneCh)
+	return e.closedCh
 }

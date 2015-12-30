@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"bufio"
+	"io"
 	"net"
 
 	"github.com/ugorji/go/codec"
@@ -44,6 +45,7 @@ var _ transporter = (*transport)(nil)
 
 type transport struct {
 	cdec       *connDecoder
+	enc        *framedMsgpackEncoder
 	dispatcher dispatcher
 	receiver   receiver
 	packetizer packetizer
@@ -73,6 +75,7 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 		calls:     newCallContainer(),
 	}
 	enc := newFramedMsgpackEncoder(ret.cdec)
+	ret.enc = enc
 	ret.dispatcher = newDispatch(enc, ret.calls, log)
 	ret.receiver = newReceiveHandler(enc, ret.protocols, ret.calls, log)
 	ret.packetizer = newPacketHandler(cdec.Reader, ret.protocols, ret.calls)
@@ -110,7 +113,7 @@ func (t *transport) RunAsync() error {
 	case <-t.startCh:
 		go func() {
 			err := t.run()
-			if err != nil {
+			if err != nil && err != io.EOF {
 				t.log.Warning("asynchronous t.run() failed with %v", err)
 			}
 		}()
@@ -138,6 +141,7 @@ func (t *transport) run() (err error) {
 	// close it before terminating our loops
 	<-t.dispatcher.Close(err)
 	<-t.receiver.Close(err)
+	<-t.enc.Close()
 	close(t.stopCh)
 
 	// Cleanup

@@ -68,6 +68,7 @@ func (p *packetHandler) loadNextFrame() ([]byte, error) {
 	var l int
 	err := p.dec.Decode(&l)
 	if err != nil {
+		fmt.Printf("read length failed with error: %+v\n", err)
 		return nil, err
 	}
 
