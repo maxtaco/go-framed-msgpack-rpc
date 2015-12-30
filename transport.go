@@ -43,15 +43,16 @@ func newConnDecoder(c net.Conn) *connDecoder {
 var _ transporter = (*transport)(nil)
 
 type transport struct {
-	cdec            *connDecoder
-	dispatcher      dispatcher
-	receiver        receiver
-	packetizer      packetizer
-	protocolHandler *protocolHandler
-	log             LogInterface
-	wrapError       WrapErrorFunc
-	startCh         chan struct{}
-	stopCh          chan struct{}
+	cdec       *connDecoder
+	dispatcher dispatcher
+	receiver   receiver
+	packetizer packetizer
+	protocols  *protocolHandler
+	calls      *callContainer
+	log        LogInterface
+	wrapError  WrapErrorFunc
+	startCh    chan struct{}
+	stopCh     chan struct{}
 }
 
 func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
@@ -65,18 +66,18 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 	startCh <- struct{}{}
 
 	ret := &transport{
-		cdec:            cdec,
-		log:             log,
-		wrapError:       wef,
-		startCh:         startCh,
-		stopCh:          make(chan struct{}),
-		protocolHandler: newProtocolHandler(wef),
+		cdec:      cdec,
+		log:       log,
+		wrapError: wef,
+		startCh:   startCh,
+		stopCh:    make(chan struct{}),
+		protocols: newProtocolHandler(wef),
+		calls:     newCallContainer(),
 	}
 	enc := newFramedMsgpackEncoder(ret.cdec)
-	callRetrievalCh := make(chan callRetrieval)
-	ret.dispatcher = newDispatch(enc, callRetrievalCh, log)
-	ret.receiver = newReceiveHandler(enc, callRetrievalCh, log, wef)
-	ret.packetizer = newPacketHandler(cdec.Reader)
+	ret.dispatcher = newDispatch(enc, ret.calls, log)
+	ret.receiver = newReceiveHandler(enc, ret.protocols, ret.calls, log)
+	ret.packetizer = newPacketHandler(cdec.Reader, ret.protocols, ret.calls)
 	return ret
 }
 
@@ -122,13 +123,10 @@ func (t *transport) RunAsync() error {
 }
 
 func (t *transport) run() (err error) {
-	// Initialize transport loops
-	writerDone := runInBg(t.writerLoop)
-
 	// Packetize: do work
 	for {
 		var rpc *RPCCall
-		if rpc, err = t.packetizer.NextFrame(t.protocolHandler); err != nil {
+		if rpc, err = t.packetizer.NextFrame(); err != nil {
 			t.receiver.Receive(rpc)
 			continue
 		}
@@ -143,9 +141,6 @@ func (t *transport) run() (err error) {
 	<-t.dispatcher.Close(err)
 	<-t.receiver.Close(err)
 	close(t.stopCh)
-
-	// Wait for loops to finish before closing the connection
-	<-writerDone
 
 	// Cleanup
 	t.cdec.Close()
@@ -168,9 +163,9 @@ func (t *transport) getReceiver() (receiver, error) {
 }
 
 func (t *transport) RegisterProtocol(p Protocol) error {
-	return t.protHandler.registerProtocol(p)
+	return t.protocols.registerProtocol(p)
 }
 
 func (t *transport) AddCloseListener(ch chan<- error) {
-	return t.receiver.AddCloseListener(ch)
+	t.receiver.AddCloseListener(ch)
 }

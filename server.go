@@ -17,7 +17,8 @@ func (s *Server) Register(p Protocol) error {
 // AddCloseListener supplies a channel listener to which
 // the server will send an error when a connection closes
 func (s *Server) AddCloseListener(ch chan error) error {
-	return s.xp.AddCloseListener(ch)
+	s.xp.AddCloseListener(ch)
+	return nil
 }
 
 // TODO: Split into Run and RunAsync, and update callers. See

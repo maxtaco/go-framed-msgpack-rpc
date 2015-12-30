@@ -60,7 +60,7 @@ func (h *protocolHandler) registerProtocol(p Protocol) error {
 	return nil
 }
 
-func (h protocolHandler) findServeHandler(name string) (*ServeHandlerDescription, WrapErrorFunc, error) {
+func (h *protocolHandler) findServeHandler(name string) (*ServeHandlerDescription, WrapErrorFunc, error) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
@@ -76,7 +76,7 @@ func (h protocolHandler) findServeHandler(name string) (*ServeHandlerDescription
 	return &srv, prot.WrapError, nil
 }
 
-func (h protocolHandler) getArg(name string) (interface{}, error) {
+func (h *protocolHandler) getArg(name string) (interface{}, error) {
 	handler, _, err := h.findServeHandler(name)
 	if err != nil {
 		return nil, err

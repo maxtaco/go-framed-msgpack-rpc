@@ -14,6 +14,7 @@ type dispatcher interface {
 
 type dispatch struct {
 	writer encoder
+	calls  *callContainer
 
 	seqid seqNumber
 
@@ -22,30 +23,20 @@ type dispatch struct {
 	// Closed once all loops are finished
 	closedCh chan struct{}
 
-	callCh     chan *call
-	callRespCh chan *call
-	rmCallCh   chan callRetrieval
-
-	// Task loop channels
-	taskBeginCh  chan *task
-	taskCancelCh chan int
-	taskEndCh    chan int
+	callCh   chan *call
+	notifyCh chan *notify
 
 	log LogInterface
 }
 
-func newDispatch(enc encoder, callRetrievalCh chan callRetrieval, l LogInterface) *dispatch {
+func newDispatch(enc encoder, calls *callContainer, l LogInterface) *dispatch {
 	d := &dispatch{
-		writer:     enc,
-		callCh:     make(chan *call),
-		callRespCh: make(chan *call),
-		rmCallCh:   callRetrievalCh,
-		stopCh:     make(chan struct{}),
-		closedCh:   make(chan struct{}),
-
-		taskBeginCh:  make(chan *task),
-		taskCancelCh: make(chan int),
-		taskEndCh:    make(chan int),
+		writer:   enc,
+		calls:    calls,
+		callCh:   make(chan *call),
+		notifyCh: make(chan *notify),
+		stopCh:   make(chan struct{}),
+		closedCh: make(chan struct{}),
 
 		seqid: 0,
 		log:   l,
@@ -54,74 +45,27 @@ func newDispatch(enc encoder, callRetrievalCh chan callRetrieval, l LogInterface
 	return d
 }
 
-type call struct {
-	ctx context.Context
-
-	// resultCh serializes the possible results generated for this
-	// call, with the first one becoming the true result.
-	resultCh chan error
-
-	// doneCh is closed when the true result for this call is
-	// chosen.
-	doneCh chan struct{}
-
-	method         string
-	seqid          seqNumber
-	arg            interface{}
-	res            interface{}
-	errorUnwrapper ErrorUnwrapper
-	profiler       Profiler
-}
-
-func newCall(ctx context.Context, m string, arg interface{}, res interface{}, u ErrorUnwrapper, p Profiler) *call {
-	return &call{
-		ctx:            ctx,
-		resultCh:       make(chan error),
-		doneCh:         make(chan struct{}),
-		method:         m,
-		arg:            arg,
-		res:            res,
-		errorUnwrapper: u,
-		profiler:       p,
-	}
-}
-
-// Finish tries to set the given error as the result of this call, and
-// returns whether or not this was successful.
-func (c *call) Finish(err error) bool {
-	select {
-	case c.resultCh <- err:
-		close(c.doneCh)
-		return true
-	case <-c.doneCh:
-		return false
-	}
-}
-
 func (d *dispatch) callLoop() {
-	calls := make(map[seqNumber]*call)
 	for {
 		select {
 		case <-d.stopCh:
-			for _, c := range calls {
-				_ = c.Finish(io.EOF)
-			}
+			d.calls.cleanupCalls()
 			close(d.closedCh)
 			return
 		case c := <-d.callCh:
-			d.handleCall(calls, c)
-		case cr := <-d.rmCallCh:
-			call := calls[cr.seqid]
-			delete(calls, cr.seqid)
-			cr.ch <- call
+			d.handleCall(c)
+		case n := <-d.notifyCh:
+			d.handleNotify(n)
+		case cr := <-d.calls.callCh:
+			cr.ch <- d.calls.retrieveCall(cr.seqid)
 		}
 	}
 }
 
-func (d *dispatch) handleCall(calls map[seqNumber]*call, c *call) {
+func (d *dispatch) handleCall(c *call) {
 	seqid := d.nextSeqid()
 	c.seqid = seqid
-	calls[c.seqid] = c
+	d.calls.addCall(c)
 	v := []interface{}{MethodCall, seqid, c.method, c.arg}
 	err := d.writer.Encode(v)
 	if err != nil {
@@ -152,6 +96,15 @@ func (d *dispatch) handleCall(calls map[seqNumber]*call, c *call) {
 	}()
 }
 
+func (d *dispatch) handleNotify(n *notify) {
+	err := d.writer.Encode([]interface{}{MethodNotify, n.name, n.arg})
+	if err != nil {
+		n.resultCh <- err
+	}
+	d.log.ClientNotify(n.name, n.arg)
+	n.resultCh <- nil
+}
+
 func (d *dispatch) nextSeqid() seqNumber {
 	ret := d.seqid
 	d.seqid++
@@ -165,18 +118,24 @@ func (d *dispatch) Call(ctx context.Context, name string, arg interface{}, res i
 	case d.callCh <- call:
 		return <-call.resultCh
 	case <-d.stopCh:
-		return DisconnectedError{}
+		return io.EOF
 	}
 }
 
 func (d *dispatch) Notify(ctx context.Context, name string, arg interface{}) error {
-	v := []interface{}{MethodNotify, name, arg}
-	err := d.writer.Encode(v)
-	if err != nil {
-		return err
+	notify := &notify{
+		name:     name,
+		arg:      arg,
+		resultCh: make(chan error),
 	}
-	d.log.ClientNotify(name, arg)
-	return nil
+	select {
+	case d.notifyCh <- notify:
+		return <-notify.resultCh
+	case <-d.stopCh:
+		return io.EOF
+	case <-ctx.Done():
+		return newCanceledError(name, -1)
+	}
 }
 
 func (d *dispatch) Close(err error) chan struct{} {

@@ -15,22 +15,15 @@ type task struct {
 
 type receiver interface {
 	Receive(*RPCCall) error
-	RegisterProtocol(Protocol) error
 	Close(err error) chan struct{}
-	AddCloseListener(chan error)
-}
-
-type callRetrieval struct {
-	seqid seqNumber
-	ch    chan *call
+	AddCloseListener(chan<- error)
 }
 
 type receiveHandler struct {
-	writer encoder
+	writer      encoder
+	protHandler *protocolHandler
 
-	protocols     map[string]Protocol
-	wrapErrorFunc WrapErrorFunc
-	tasks         map[int]context.CancelFunc
+	tasks map[int]context.CancelFunc
 
 	listenerMtx sync.Mutex
 	listeners   map[chan<- error]struct{}
@@ -40,6 +33,7 @@ type receiveHandler struct {
 	// Closed once all loops are finished
 	closedCh chan struct{}
 
+	calls    *callContainer
 	rmCallCh chan callRetrieval
 
 	// Task loop channels
@@ -51,22 +45,21 @@ type receiveHandler struct {
 	messageHandlers map[MethodType]messageHandler
 }
 
-func newReceiveHandler(enc encoder, rmCallCh chan callRetrieval, l LogInterface, wef WrapErrorFunc) *receiveHandler {
+func newReceiveHandler(enc encoder, protHandler *protocolHandler, calls *callContainer, l LogInterface) *receiveHandler {
 	r := &receiveHandler{
-		writer:    enc,
-		protocols: make(map[string]Protocol),
-		tasks:     make(map[int]context.CancelFunc),
-		listeners: make(map[chan<- error]struct{}),
-		rmCallCh:  rmCallCh,
-		stopCh:    make(chan struct{}),
-		closedCh:  make(chan struct{}),
+		writer:      enc,
+		protHandler: protHandler,
+		tasks:       make(map[int]context.CancelFunc),
+		listeners:   make(map[chan<- error]struct{}),
+		calls:       calls,
+		stopCh:      make(chan struct{}),
+		closedCh:    make(chan struct{}),
 
 		taskBeginCh:  make(chan *task),
 		taskCancelCh: make(chan seqNumber),
 		taskEndCh:    make(chan seqNumber),
 
-		log:           l,
-		wrapErrorFunc: wef,
+		log: l,
 	}
 	r.messageHandlers = map[MethodType]messageHandler{
 		MethodNotify:   r.receiveNotify,
@@ -107,68 +100,45 @@ func (d *receiveHandler) Receive(rpc *RPCCall) error {
 }
 
 func (r *receiveHandler) receiveNotify(rpc *RPCCall) error {
-	req := newRequest(rpc)
+	req := newRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 
 func (r *receiveHandler) receiveCall(rpc *RPCCall) error {
-	req := newRequest(rpc)
+	req := newRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 
 func (r *receiveHandler) receiveCancel(rpc *RPCCall) error {
-	req := newRequest(rpc)
-	req.LogInvocation(r.log, nil, nil)
+	r.log.ServerCancelCall(rpc.SeqNo(), rpc.Name())
 	r.taskCancelCh <- rpc.SeqNo()
 	return nil
 }
 
 func (r *receiveHandler) handleReceiveDispatch(req request) error {
-	serveHandler, wrapErrorFunc, se := r.findServeHandler(req.Name())
+	serveHandler, wrapErrorFunc, se := r.protHandler.findServeHandler(req.Name())
 	if se != nil {
-		req.LogInvocation(r.log, se, nil)
-		return req.Reply(r.writer, r.log)
+		req.LogInvocation(se)
+		return req.Reply(r.writer, nil, se)
 	}
 	r.taskBeginCh <- &task{req.SeqNo(), req.CancelFunc()}
-	req.Serve(r.writer, serveHandler, wrapErrorFunc, r.log)
+	req.Serve(r.writer, serveHandler, wrapErrorFunc)
 	return nil
 }
 
 func (r *receiveHandler) receiveResponse(rpc *RPCCall) (err error) {
-	ch := make(chan *call)
-	r.rmCallCh <- callRetrieval{rpc.SeqNo(), ch}
-	call := <-ch
+	call := rpc.Call()
 
 	if call == nil {
 		r.log.UnexpectedReply(rpc.SeqNo())
 		return CallNotFoundError{rpc.SeqNo()}
 	}
 
-	var apperr error
-
+	_ = call.Finish(rpc.Err())
 	call.profiler.Stop()
+	r.log.ClientReply(rpc.SeqNo(), rpc.Name(), rpc.Err(), rpc.Res())
 
-	if apperr, err = decodeError(r.reader, m, call.errorUnwrapper); err == nil {
-		decodeTo := call.res
-		if decodeTo == nil {
-			decodeTo = new(interface{})
-		}
-		err = decodeMessage(r.reader, m, decodeTo)
-		r.log.ClientReply(m.seqno, call.method, err, decodeTo)
-	} else {
-		r.log.ClientReply(m.seqno, call.method, err, nil)
-	}
-
-	if err != nil {
-		decodeToNull(r.reader, m)
-		if apperr == nil {
-			apperr = err
-		}
-	}
-
-	_ = call.Finish(apperr)
-
-	return
+	return rpc.Err()
 }
 
 func (r *receiveHandler) Close(err error) chan struct{} {

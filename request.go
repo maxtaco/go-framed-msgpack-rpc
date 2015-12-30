@@ -9,92 +9,87 @@ import (
 type request interface {
 	RPC
 	CancelFunc() context.CancelFunc
-	Reply(encoder, LogInterface) error
-	Serve(encoder, *ServeHandlerDescription, WrapErrorFunc, LogInterface)
-	LogInvocation(log LogInterface, err error, arg interface{})
-	LogCompletion(log LogInterface, err error)
+	Reply(encoder, interface{}, error) error
+	Serve(encoder, *ServeHandlerDescription, WrapErrorFunc)
+	LogInvocation(err error)
+	LogCompletion(res interface{}, err error)
 }
 
 type requestImpl struct {
 	*RPCCall
 	ctx        context.Context
 	cancelFunc context.CancelFunc
+	log        LogInterface
 }
 
 func (req *requestImpl) CancelFunc() context.CancelFunc {
 	return req.cancelFunc
 }
 
-func (r *requestImpl) LogInvocation(LogInterface, error, interface{}) {}
-func (r *requestImpl) LogCompletion(LogInterface, error)              {}
-func (r *requestImpl) Reply(encoder, LogInterface) error              { return nil }
-func (r *requestImpl) Serve(byteReadingDecoder, encoder, *ServeHandlerDescription, WrapErrorFunc, LogInterface) {
+func (r *requestImpl) LogInvocation(error)                     {}
+func (r *requestImpl) LogCompletion(interface{}, error)        {}
+func (r *requestImpl) Reply(encoder, interface{}, error) error { return nil }
+func (r *requestImpl) Serve(byteReadingDecoder, encoder, *ServeHandlerDescription, WrapErrorFunc) {
 }
 
 type callRequest struct {
 	requestImpl
 }
 
-func newCallRequest(rpc *RPCCall) *callRequest {
+func newCallRequest(rpc *RPCCall, log LogInterface) *callRequest {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &callRequest{
 		requestImpl: requestImpl{
 			RPCCall:    rpc,
 			ctx:        ctx,
 			cancelFunc: cancel,
+			log:        log,
 		},
 	}
 }
 
-func (r *callRequest) LogInvocation(log LogInterface, err error, arg interface{}) {
-	log.ServerCall(r.seqno, r.method, err, arg)
+func (r *callRequest) LogInvocation(err error) {
+	r.log.ServerCall(r.SeqNo(), r.Name(), err, r.Arg())
 }
 
-func (r *callRequest) LogCompletion(log LogInterface, err error) {
-	log.ServerReply(r.seqno, r.method, err, r.res)
+func (r *callRequest) LogCompletion(res interface{}, err error) {
+	r.log.ServerReply(r.SeqNo(), r.Name(), err, res)
 }
 
-func (r *callRequest) Reply(enc encoder, log LogInterface) error {
-	var err error
+func (r *callRequest) Reply(enc encoder, res interface{}, err error) error {
 	select {
 	case <-r.ctx.Done():
 		// TODO: Use newCanceledError and log.Info:
 		// https://github.com/keybase/go-framed-msgpack-rpc/issues/29
 		// .
 		err = fmt.Errorf("call canceled for seqno %d", r.SeqNo())
-		log.Warning(err.Error())
+		r.log.Warning(err.Error())
 	default:
 		v := []interface{}{
 			MethodResponse,
-			r.seqno,
-			r.err,
-			r.res,
+			r.SeqNo(),
+			err,
+			res,
 		}
 		err = enc.Encode(v)
 		if err != nil {
-			log.Warning("Reply error for %d: %s", r.SeqNo(), err.Error())
+			r.log.Warning("Reply error for %d: %s", r.SeqNo(), err.Error())
 		}
 	}
 	return err
 }
 
-func (r *callRequest) Serve(transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) {
+func (r *callRequest) Serve(transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc) {
 
-	prof := log.StartProfiler("serve %s", r.method)
+	prof := r.log.StartProfiler("serve %s", r.Name())
 	arg := r.Arg()
 
 	go func() {
-		r.LogInvocation(log, err, arg)
-		if err != nil {
-			r.err = wrapError(wrapErrorFunc, err)
-		} else {
-			res, err := handler.Handler(r.ctx, arg)
-			r.err = wrapError(wrapErrorFunc, err)
-			r.res = res
-		}
+		r.LogInvocation(nil)
+		res, err := handler.Handler(r.ctx, arg)
 		prof.Stop()
-		r.LogCompletion(log, err)
-		r.Reply(transmitter, log)
+		r.LogCompletion(res, err)
+		r.Reply(transmitter, res, err)
 	}()
 }
 
@@ -102,65 +97,45 @@ type notifyRequest struct {
 	requestImpl
 }
 
-func newNotifyRequest(rpc *RPCCall) *notifyRequest {
+func newNotifyRequest(rpc *RPCCall, log LogInterface) *notifyRequest {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &notifyRequest{
 		requestImpl: requestImpl{
 			RPCCall:    rpc,
 			ctx:        ctx,
 			cancelFunc: cancel,
+			log:        log,
 		},
 	}
 }
 
-func (r *notifyRequest) LogInvocation(log LogInterface, err error, arg interface{}) {
-	log.ServerNotifyCall(r.method, err, arg)
+func (r *notifyRequest) LogInvocation(err error) {
+	r.log.ServerNotifyCall(r.Name(), err, r.Arg())
 }
 
-func (r *notifyRequest) LogCompletion(log LogInterface, err error) {
-	log.ServerNotifyComplete(r.method, err)
+func (r *notifyRequest) LogCompletion(_ interface{}, err error) {
+	r.log.ServerNotifyComplete(r.Name(), err)
 }
 
-func (r *notifyRequest) Serve(transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc, log LogInterface) {
+func (r *notifyRequest) Serve(transmitter encoder, handler *ServeHandlerDescription, wrapErrorFunc WrapErrorFunc) {
 
-	prof := log.StartProfiler("serve-notify %s", r.method)
+	prof := r.log.StartProfiler("serve-notify %s", r.Name())
 	arg := r.Arg()
 
 	go func() {
-		r.LogInvocation(log, err, arg)
-		if err == nil {
-			_, err = handler.Handler(r.ctx, arg)
-		}
+		r.LogInvocation(nil)
+		_, err := handler.Handler(r.ctx, arg)
 		prof.Stop()
-		r.LogCompletion(log, err)
+		r.LogCompletion(nil, err)
 	}()
 }
 
-type cancelRequest struct {
-	requestImpl
-}
-
-func newCancelRequest(rpc *RPCCall) *cancelRequest {
-	return &cancelRequest{
-		requestImpl: requestImpl{
-			RPCCall: rpc,
-			ctx:     context.Background(),
-		},
-	}
-}
-
-func (r *cancelRequest) LogInvocation(log LogInterface, err error, arg interface{}) {
-	log.ServerCancelCall(r.seqno, r.method)
-}
-
-func newRequest(rpc *RPCCall) request {
+func newRequest(rpc *RPCCall, log LogInterface) request {
 	switch rpc.Type() {
 	case MethodCall:
-		return newCallRequest(rpc)
+		return newCallRequest(rpc, log)
 	case MethodNotify:
-		return newNotifyRequest(rpc)
-	case MethodCancel:
-		return newCancelRequest(rpc)
+		return newNotifyRequest(rpc, log)
 	}
 	return nil
 }

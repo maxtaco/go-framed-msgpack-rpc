@@ -24,21 +24,25 @@ func makeDecoderPool() decoderPool {
 }
 
 type packetizer interface {
-	NextFrame(*protocolHandler) (*RPCCall, error)
+	NextFrame() (*RPCCall, error)
 }
 
 type packetHandler struct {
 	dec           *codec.Decoder
 	reader        *bufio.Reader
 	frameDecoders decoderPool
+	protocols     *protocolHandler
+	calls         *callContainer
 	mtx           sync.Mutex
 }
 
-func newPacketHandler(reader *bufio.Reader) *packetHandler {
+func newPacketHandler(reader *bufio.Reader, protocols *protocolHandler, calls *callContainer) *packetHandler {
 	return &packetHandler{
 		reader:        reader,
 		dec:           codec.NewDecoder(reader, newCodecMsgpackHandle()),
 		frameDecoders: makeDecoderPool(),
+		protocols:     protocols,
+		calls:         calls,
 	}
 }
 
@@ -52,7 +56,7 @@ func (p *packetHandler) returnFrameDecoder(d *codec.Decoder) {
 	p.frameDecoders <- d
 }
 
-func (p *packetHandler) NextFrame(protHandler *protocolHandler) (*RPCCall, error) {
+func (p *packetHandler) NextFrame() (*RPCCall, error) {
 	bytes, err := p.loadNextFrame()
 	if err != nil {
 		return nil, err
@@ -60,9 +64,6 @@ func (p *packetHandler) NextFrame(protHandler *protocolHandler) (*RPCCall, error
 	if len(bytes) < 1 {
 		return nil, fmt.Errorf("invalid frame size: %d", len(bytes))
 	}
-
-	dec := p.getFrameDecoder(bytes[1:])
-	defer p.returnFrameDecoder(dec)
 
 	// Attempt to read the fixarray
 	nb := int(bytes[0])
@@ -75,12 +76,12 @@ func (p *packetHandler) NextFrame(protHandler *protocolHandler) (*RPCCall, error
 	if nb < 0x91 || nb > 0x9f {
 		return nil, NewPacketizerError("wrong message structure prefix (%d)", nb)
 	}
+	dec := p.getFrameDecoder(bytes[1:])
+	defer p.returnFrameDecoder(dec)
+
 	rpc := &RPCCall{}
-	err = rpc.Decode(nb-1, dec, protHandler)
-	if err != nil {
-		return nil, err
-	}
-	return rpc, nil
+	err = rpc.Decode(nb, dec, p.protocols, p.calls)
+	return rpc, err
 }
 
 func (p *packetHandler) loadNextFrame() ([]byte, error) {
