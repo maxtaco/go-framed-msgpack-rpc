@@ -112,8 +112,10 @@ func (e *framedMsgpackEncoder) Encode(i interface{}) error {
 	return err
 }
 
-type RPC interface {
+type RPCMessage interface {
 	Type() MethodType
+	Encode(e encoder) error
+	Decode(l int, d decoder, p *protocolHandler, cc *callContainer) error
 	RPCData
 }
 
@@ -202,6 +204,87 @@ func (r RPCCallData) Name() string {
 
 func (r RPCCallData) Arg() interface{} {
 	return r.arg
+}
+
+type RPCResponseData struct {
+	BasicRPCData
+	c     *call
+	seqNo seqNumber
+	err   error
+}
+
+func (r RPCResponseData) DataLength() int {
+	return 2
+}
+
+func (r RPCResponseData) EncodeData(v []interface{}) error {
+	if len(v) != r.DataLength() {
+		return errors.New("wrong message length")
+	}
+	// TODO finish
+	return nil
+}
+
+func (r *RPCResponseData) DecodeData(l int, d decoder, _ *protocolHandler, cc *callContainer) error {
+	if l != 3 {
+		return errors.New("wrong message length")
+	}
+	if err := d.Decode(&r.seqNo); err != nil {
+		return err
+	}
+
+	// Attempt to retrieve the call
+	r.c = cc.retrieveCall(r.seqNo)
+	if r.c == nil {
+		return CallNotFoundError{r.seqNo}
+	}
+
+	// Decode the error
+	var responseErr interface{}
+	if err := d.Decode(responseErr); err != nil {
+		return err
+	}
+
+	// Ensure the error is wrapped correctly
+	if r.c.errorUnwrapper != nil {
+		var dispatchErr error
+		r.err, dispatchErr = r.c.errorUnwrapper.UnwrapError(responseErr)
+		if dispatchErr != nil {
+			return dispatchErr
+		}
+	} else if responseErr != nil {
+		errAsString, ok := responseErr.(*string)
+		if !ok {
+			return errors.New("unable to convert error to string")
+		}
+		r.err = errors.New(*errAsString)
+	}
+
+	// Decode the result
+	if r.c.res == nil {
+		r.c.res = new(interface{})
+	}
+	return d.Decode(r.c.res)
+}
+
+func (r RPCResponseData) SeqNo() seqNumber {
+	return r.seqNo
+}
+
+func (r RPCResponseData) Name() string {
+	return r.c.method
+}
+
+func (r RPCResponseData) Err() error {
+	return r.err
+}
+
+func (r RPCResponseData) Res() interface{} {
+	return r.c.res
+}
+
+func (r RPCResponseData) Call() *call {
+	return r.c
 }
 
 type RPCNotifyData struct {
@@ -295,7 +378,7 @@ func (c RPCCall) Type() MethodType {
 	return c.typ
 }
 
-func (c RPCCall) Encode(e *codec.Encoder) error {
+func (c RPCCall) Encode(e encoder) error {
 	v := make([]interface{}, 1+c.DataLength())
 	v[0] = c.typ
 	if err := c.EncodeData(v[1:]); err != nil {
@@ -323,85 +406,4 @@ func (c *RPCCall) Decode(l int, d decoder, p *protocolHandler, cc *callContainer
 		return errors.New("invalid RPC type")
 	}
 	return c.DecodeData(l-1, d, p, cc)
-}
-
-type RPCResponseData struct {
-	BasicRPCData
-	c     *call
-	seqNo seqNumber
-	err   error
-}
-
-func (r RPCResponseData) DataLength() int {
-	return 2
-}
-
-func (r RPCResponseData) EncodeData(v []interface{}) error {
-	if len(v) != r.DataLength() {
-		return errors.New("wrong message length")
-	}
-	// TODO finish
-	return nil
-}
-
-func (r *RPCResponseData) DecodeData(l int, d decoder, _ *protocolHandler, cc *callContainer) error {
-	if l != 3 {
-		return errors.New("wrong message length")
-	}
-	if err := d.Decode(&r.seqNo); err != nil {
-		return err
-	}
-
-	// Attempt to retrieve the call
-	r.c = cc.retrieveCall(r.seqNo)
-	if r.c == nil {
-		return CallNotFoundError{r.seqNo}
-	}
-
-	// Decode the error
-	var responseErr interface{}
-	if err := d.Decode(responseErr); err != nil {
-		return err
-	}
-
-	// Ensure the error is wrapped correctly
-	if r.c.errorUnwrapper != nil {
-		var dispatchErr error
-		r.err, dispatchErr = r.c.errorUnwrapper.UnwrapError(responseErr)
-		if dispatchErr != nil {
-			return dispatchErr
-		}
-	} else if responseErr != nil {
-		errAsString, ok := responseErr.(*string)
-		if !ok {
-			return errors.New("unable to convert error to string")
-		}
-		r.err = errors.New(*errAsString)
-	}
-
-	// Decode the result
-	if r.c.res == nil {
-		r.c.res = new(interface{})
-	}
-	return d.Decode(r.c.res)
-}
-
-func (r RPCResponseData) SeqNo() seqNumber {
-	return r.seqNo
-}
-
-func (r RPCResponseData) Name() string {
-	return r.c.method
-}
-
-func (r RPCResponseData) Err() error {
-	return r.err
-}
-
-func (r RPCResponseData) Res() interface{} {
-	return r.c.res
-}
-
-func (r RPCResponseData) Call() *call {
-	return r.c
 }

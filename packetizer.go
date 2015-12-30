@@ -10,7 +10,7 @@ import (
 )
 
 type packetizer interface {
-	NextFrame() (*RPCCall, error)
+	NextFrame() (RPCMessage, error)
 }
 
 type packetHandler struct {
@@ -32,7 +32,7 @@ func newPacketHandler(reader io.Reader, protocols *protocolHandler, calls *callC
 	}
 }
 
-func (p *packetHandler) NextFrame() (*RPCCall, error) {
+func (p *packetHandler) NextFrame() (RPCMessage, error) {
 	bytes, err := p.loadNextFrame()
 	if err != nil {
 		return nil, err

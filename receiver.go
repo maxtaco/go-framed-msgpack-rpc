@@ -6,7 +6,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-type messageHandler func(*RPCCall) error
+type messageHandler func(RPCMessage) error
 
 type task struct {
 	seqid      seqNumber
@@ -14,7 +14,7 @@ type task struct {
 }
 
 type receiver interface {
-	Receive(*RPCCall) error
+	Receive(RPCMessage) error
 	Close(err error) chan struct{}
 	AddCloseListener(chan<- error)
 }
@@ -91,7 +91,7 @@ func (r *receiveHandler) taskLoop() {
 	}
 }
 
-func (d *receiveHandler) Receive(rpc *RPCCall) error {
+func (d *receiveHandler) Receive(rpc RPCMessage) error {
 	handler, ok := d.messageHandlers[rpc.Type()]
 	if !ok {
 		return NewDispatcherError("invalid message type")
@@ -99,17 +99,17 @@ func (d *receiveHandler) Receive(rpc *RPCCall) error {
 	return handler(rpc)
 }
 
-func (r *receiveHandler) receiveNotify(rpc *RPCCall) error {
+func (r *receiveHandler) receiveNotify(rpc RPCMessage) error {
 	req := newRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 
-func (r *receiveHandler) receiveCall(rpc *RPCCall) error {
+func (r *receiveHandler) receiveCall(rpc RPCMessage) error {
 	req := newRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 
-func (r *receiveHandler) receiveCancel(rpc *RPCCall) error {
+func (r *receiveHandler) receiveCancel(rpc RPCMessage) error {
 	r.log.ServerCancelCall(rpc.SeqNo(), rpc.Name())
 	r.taskCancelCh <- rpc.SeqNo()
 	return nil
@@ -126,7 +126,7 @@ func (r *receiveHandler) handleReceiveDispatch(req request) error {
 	return nil
 }
 
-func (r *receiveHandler) receiveResponse(rpc *RPCCall) (err error) {
+func (r *receiveHandler) receiveResponse(rpc RPCMessage) (err error) {
 	call := rpc.Call()
 
 	if call == nil {

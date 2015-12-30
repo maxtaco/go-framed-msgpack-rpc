@@ -9,7 +9,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-func testReceive(t *testing.T, calls *callContainer, p *Protocol, rpc *RPCCall) error {
+func testReceive(t *testing.T, calls *callContainer, p *Protocol, rpc RPCMessage) error {
 	receiveOut := newBlockingMockCodec()
 
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})

@@ -123,7 +123,7 @@ func (t *transport) RunAsync() error {
 func (t *transport) run() (err error) {
 	// Packetize: do work
 	for {
-		var rpc *RPCCall
+		var rpc RPCMessage
 		if rpc, err = t.packetizer.NextFrame(); err == nil {
 			t.receiver.Receive(rpc)
 			continue
