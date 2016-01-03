@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"io"
 	"sync"
 
 	"golang.org/x/net/context"
@@ -10,51 +9,16 @@ import (
 type call struct {
 	ctx context.Context
 
-	// resultCh serializes the possible results generated for this
-	// call, with the first one becoming the true result.
-	resultCh chan error
+	// TODO respond with less than a full RPCMessage
+	resultCh chan RPCMessage
 
-	// doneCh is closed when the true result for this call is
-	// chosen.
-	doneCh chan struct{}
+	closedCh chan struct{}
 
 	method         string
 	seqid          seqNumber
 	arg            interface{}
 	res            interface{}
-	profiler       Profiler
 	errorUnwrapper ErrorUnwrapper
-}
-
-func newCall(ctx context.Context, m string, arg interface{}, res interface{}, u ErrorUnwrapper, p Profiler) *call {
-	return &call{
-		ctx:            ctx,
-		resultCh:       make(chan error),
-		doneCh:         make(chan struct{}),
-		method:         m,
-		arg:            arg,
-		res:            res,
-		profiler:       p,
-		errorUnwrapper: u,
-	}
-}
-
-// Finish tries to set the given error as the result of this call, and
-// returns whether or not this was successful.
-func (c *call) Finish(err error) bool {
-	select {
-	case c.resultCh <- err:
-		close(c.doneCh)
-		return true
-	case <-c.doneCh:
-		return false
-	}
-}
-
-type notify struct {
-	name     string
-	arg      interface{}
-	resultCh chan error
 }
 
 type callRetrieval struct {
@@ -63,39 +27,61 @@ type callRetrieval struct {
 }
 
 type callContainer struct {
-	calls  map[seqNumber]*call
-	callCh chan *callRetrieval
-	mtx    sync.Mutex
+	calls    map[seqNumber]*call
+	callCh   chan *callRetrieval
+	callsMtx sync.Mutex
+	seqMtx   sync.Mutex
+	seqid    seqNumber
 }
 
 func newCallContainer() *callContainer {
 	return &callContainer{
 		calls:  make(map[seqNumber]*call),
 		callCh: make(chan *callRetrieval),
+		seqid:  0,
 	}
 }
 
-func (cc *callContainer) addCall(c *call) {
-	cc.mtx.Lock()
-	defer cc.mtx.Unlock()
+// TODO implement stopCh and closedCh scheme to handle closing the container
+
+func (cc *callContainer) NewCall(ctx context.Context, m string, arg interface{}, res interface{}, u ErrorUnwrapper) *call {
+	return &call{
+		ctx:            ctx,
+		resultCh:       make(chan RPCMessage),
+		method:         m,
+		arg:            arg,
+		res:            res,
+		errorUnwrapper: u,
+		seqid:          cc.nextSeqid(),
+	}
+}
+
+func (cc *callContainer) nextSeqid() seqNumber {
+	cc.seqMtx.Lock()
+	defer cc.seqMtx.Unlock()
+
+	ret := cc.seqid
+	cc.seqid++
+	return ret
+}
+
+func (cc *callContainer) AddCall(c *call) {
+	cc.callsMtx.Lock()
+	defer cc.callsMtx.Unlock()
 
 	cc.calls[c.seqid] = c
 }
 
-func (cc *callContainer) retrieveCall(seqid seqNumber) *call {
-	cc.mtx.Lock()
-	defer cc.mtx.Unlock()
+func (cc *callContainer) RetrieveCall(seqid seqNumber) *call {
+	cc.callsMtx.Lock()
+	defer cc.callsMtx.Unlock()
 
-	call := cc.calls[seqid]
-	delete(cc.calls, seqid)
-	return call
+	return cc.calls[seqid]
 }
 
-func (cc *callContainer) cleanupCalls() {
-	cc.mtx.Lock()
-	defer cc.mtx.Unlock()
+func (cc *callContainer) RemoveCall(seqid seqNumber) {
+	cc.callsMtx.Lock()
+	defer cc.callsMtx.Unlock()
 
-	for _, c := range cc.calls {
-		_ = c.Finish(io.EOF)
-	}
+	delete(cc.calls, seqid)
 }

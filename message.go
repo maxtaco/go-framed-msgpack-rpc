@@ -6,7 +6,7 @@ import (
 
 type RPCMessage interface {
 	Type() MethodType
-	Encode(e encoder) error
+	Encode(e encoder) <-chan error
 	Decode(l int, d decoder, p *protocolHandler, cc *callContainer) error
 	RPCData
 }
@@ -17,7 +17,7 @@ type RPCData interface {
 	SeqNo() seqNumber
 	Err() error
 	Res() interface{}
-	Call() *call
+	ResponseCh() chan RPCMessage
 	DataLength() int
 	DecodeData(int, decoder, *protocolHandler, *callContainer) error
 	EncodeData([]interface{}) error
@@ -45,8 +45,8 @@ func (BasicRPCData) Res() interface{} {
 	panic("Res() not implemented for this type")
 }
 
-func (BasicRPCData) Call() *call {
-	panic("Call() not implemented for this type")
+func (BasicRPCData) ResponseCh() chan RPCMessage {
+	panic("ResponseCh() not implemented for this type")
 }
 
 type RPCCallData struct {
@@ -100,9 +100,8 @@ func (r RPCCallData) Arg() interface{} {
 
 type RPCResponseData struct {
 	BasicRPCData
-	c     *call
-	seqNo seqNumber
-	err   error
+	c   *call
+	err error
 }
 
 func (r RPCResponseData) DataLength() int {
@@ -121,18 +120,22 @@ func (r *RPCResponseData) DecodeData(l int, d decoder, _ *protocolHandler, cc *c
 	if l != 3 {
 		return errors.New("wrong message length")
 	}
-	if err := d.Decode(&r.seqNo); err != nil {
+	var seqNo seqNumber
+	if err := d.Decode(&seqNo); err != nil {
 		return err
 	}
 
 	// Attempt to retrieve the call
-	r.c = cc.retrieveCall(r.seqNo)
+	r.c = cc.RetrieveCall(seqNo)
 	if r.c == nil {
-		return CallNotFoundError{r.seqNo}
+		return CallNotFoundError{seqNo}
 	}
 
 	// Decode the error
 	var responseErr interface{}
+	if r.c.errorUnwrapper != nil {
+		responseErr = r.c.errorUnwrapper.MakeArg()
+	}
 	if err := d.Decode(responseErr); err != nil {
 		return err
 	}
@@ -160,7 +163,7 @@ func (r *RPCResponseData) DecodeData(l int, d decoder, _ *protocolHandler, cc *c
 }
 
 func (r RPCResponseData) SeqNo() seqNumber {
-	return r.seqNo
+	return r.c.seqid
 }
 
 func (r RPCResponseData) Name() string {
@@ -175,8 +178,8 @@ func (r RPCResponseData) Res() interface{} {
 	return r.c.res
 }
 
-func (r RPCResponseData) Call() *call {
-	return r.c
+func (r RPCResponseData) ResponseCh() chan RPCMessage {
+	return r.c.resultCh
 }
 
 type RPCNotifyData struct {
@@ -271,11 +274,13 @@ func (c RPCCall) Type() MethodType {
 	return c.typ
 }
 
-func (c RPCCall) Encode(e encoder) error {
+func (c RPCCall) Encode(e encoder) <-chan error {
 	v := make([]interface{}, 1+c.DataLength())
 	v[0] = c.typ
 	if err := c.EncodeData(v[1:]); err != nil {
-		return err
+		ch := make(chan error, 1)
+		ch <- err
+		return ch
 	}
 	return e.Encode(v)
 }

@@ -77,7 +77,7 @@ func NewTransport(c net.Conn, l LogFactory, wef WrapErrorFunc) Transporter {
 	enc := newFramedMsgpackEncoder(ret.cdec)
 	ret.enc = enc
 	ret.dispatcher = newDispatch(enc, ret.calls, log)
-	ret.receiver = newReceiveHandler(enc, ret.protocols, ret.calls, log)
+	ret.receiver = newReceiveHandler(enc, ret.protocols, log)
 	ret.packetizer = newPacketHandler(cdec.Reader, ret.protocols, ret.calls)
 	return ret
 }
@@ -139,7 +139,7 @@ func (t *transport) run() (err error) {
 
 	// Since the receiver might require the transport, we have to
 	// close it before terminating our loops
-	<-t.dispatcher.Close(err)
+	t.dispatcher.Close()
 	<-t.receiver.Close(err)
 	<-t.enc.Close()
 	close(t.stopCh)

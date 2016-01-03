@@ -1,8 +1,6 @@
 package rpc
 
 import (
-	"fmt"
-
 	"golang.org/x/net/context"
 )
 
@@ -62,7 +60,7 @@ func (r *callRequest) Reply(enc encoder, res interface{}, err error) error {
 		// TODO: Use newCanceledError and log.Info:
 		// https://github.com/keybase/go-framed-msgpack-rpc/issues/29
 		// .
-		err = fmt.Errorf("call canceled for seqno %d", r.SeqNo())
+		err = newCanceledError(r.Name(), r.SeqNo())
 		r.log.Warning(err.Error())
 	default:
 		v := []interface{}{
@@ -71,7 +69,8 @@ func (r *callRequest) Reply(enc encoder, res interface{}, err error) error {
 			err,
 			res,
 		}
-		err = enc.Encode(v)
+		errCh := enc.Encode(v)
+		err = <-errCh
 		if err != nil {
 			r.log.Warning("Reply error for %d: %s", r.SeqNo(), err.Error())
 		}

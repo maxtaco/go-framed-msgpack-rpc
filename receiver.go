@@ -33,7 +33,6 @@ type receiveHandler struct {
 	// Closed once all loops are finished
 	closedCh chan struct{}
 
-	calls    *callContainer
 	rmCallCh chan callRetrieval
 
 	// Task loop channels
@@ -45,13 +44,12 @@ type receiveHandler struct {
 	messageHandlers map[MethodType]messageHandler
 }
 
-func newReceiveHandler(enc encoder, protHandler *protocolHandler, calls *callContainer, l LogInterface) *receiveHandler {
+func newReceiveHandler(enc encoder, protHandler *protocolHandler, l LogInterface) *receiveHandler {
 	r := &receiveHandler{
 		writer:      enc,
 		protHandler: protHandler,
 		tasks:       make(map[int]context.CancelFunc),
 		listeners:   make(map[chan<- error]struct{}),
-		calls:       calls,
 		stopCh:      make(chan struct{}),
 		closedCh:    make(chan struct{}),
 
@@ -127,18 +125,15 @@ func (r *receiveHandler) handleReceiveDispatch(req request) error {
 }
 
 func (r *receiveHandler) receiveResponse(rpc RPCMessage) (err error) {
-	call := rpc.Call()
+	callResponseCh := rpc.ResponseCh()
 
-	if call == nil {
+	if callResponseCh == nil {
 		r.log.UnexpectedReply(rpc.SeqNo())
 		return CallNotFoundError{rpc.SeqNo()}
 	}
 
-	_ = call.Finish(rpc.Err())
-	call.profiler.Stop()
-	r.log.ClientReply(rpc.SeqNo(), rpc.Name(), rpc.Err(), rpc.Res())
-
-	return rpc.Err()
+	callResponseCh <- rpc
+	return nil
 }
 
 func (r *receiveHandler) Close(err error) chan struct{} {

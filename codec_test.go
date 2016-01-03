@@ -67,7 +67,8 @@ func TestCodecStruct(t *testing.T) {
 
 	// Advance the buffer past the msgpack fixarray descriptor byte
 	b, _ := buf.ReadByte()
-	require.Equal(t, 0x94, int(b))
+	nb := int(b)
+	require.Equal(t, 0x94, nb)
 
 	p := newProtocolHandler(nil)
 	p.registerProtocol(Protocol{
@@ -85,7 +86,7 @@ func TestCodecStruct(t *testing.T) {
 		},
 	})
 	c := RPCCall{}
-	err = c.Decode(4, dec, p, nil)
+	err = c.Decode(nb-0x90, dec, p, nil)
 	require.Nil(t, err)
 	require.Equal(t, MethodCall, c.Type())
 	require.Equal(t, seqNumber(999), c.SeqNo())

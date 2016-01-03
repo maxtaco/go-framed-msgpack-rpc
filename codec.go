@@ -11,7 +11,7 @@ type decoder interface {
 }
 
 type encoder interface {
-	Encode(interface{}) error
+	Encode(interface{}) <-chan error
 }
 
 const poolSize int = 10
@@ -66,7 +66,7 @@ func newCodecMsgpackHandle() codec.Handle {
 	}
 }
 
-type writeContainer struct {
+type writeBundle struct {
 	bytes []byte
 	ch    chan error
 }
@@ -74,7 +74,7 @@ type writeContainer struct {
 type framedMsgpackEncoder struct {
 	encoders encoderPool
 	writer   io.Writer
-	writeCh  chan writeContainer
+	writeCh  chan writeBundle
 	doneCh   chan struct{}
 	closedCh chan struct{}
 }
@@ -83,7 +83,7 @@ func newFramedMsgpackEncoder(writer io.Writer) *framedMsgpackEncoder {
 	e := &framedMsgpackEncoder{
 		encoders: makeEncoderPool(),
 		writer:   writer,
-		writeCh:  make(chan writeContainer),
+		writeCh:  make(chan writeBundle),
 		doneCh:   make(chan struct{}),
 		closedCh: make(chan struct{}),
 	}
@@ -110,18 +110,19 @@ func (e *framedMsgpackEncoder) encodeFrame(i interface{}) ([]byte, error) {
 	return append(length, content...), nil
 }
 
-func (e *framedMsgpackEncoder) Encode(i interface{}) error {
+func (e *framedMsgpackEncoder) Encode(i interface{}) <-chan error {
 	bytes, err := e.encodeFrame(i)
+	ch := make(chan error, 1)
 	if err != nil {
-		return err
+		ch <- err
+		return ch
 	}
-	write := writeContainer{bytes, make(chan error)}
 	select {
 	case <-e.doneCh:
-		return io.EOF
-	case e.writeCh <- write:
-		return <-write.ch
+		ch <- io.EOF
+	case e.writeCh <- writeBundle{bytes, ch}:
 	}
+	return ch
 }
 
 func (e *framedMsgpackEncoder) writerLoop() {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 
 	"github.com/ugorji/go/codec"
@@ -68,7 +69,11 @@ func (p *packetHandler) loadNextFrame() ([]byte, error) {
 	var l int
 	err := p.dec.Decode(&l)
 	if err != nil {
-		fmt.Printf("read length failed with error: %+v\n", err)
+		if _, ok := err.(*net.OpError); ok {
+			// If the connection is reset or has been closed on this side,
+			// return EOF
+			return nil, io.EOF
+		}
 		return nil, err
 	}
 
