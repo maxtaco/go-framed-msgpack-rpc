@@ -85,7 +85,8 @@ func (d *dispatch) Notify(ctx context.Context, name string, arg interface{}) err
 	case <-d.stopCh:
 		return io.EOF
 	case <-ctx.Done():
-		return ctx.Err()
+		d.log.ClientCancel(-1, name, nil)
+		return newCanceledError(name, -1)
 	}
 }
 

@@ -62,7 +62,8 @@ func (p encoderPool) returnEncoder(enc *codec.Encoder) {
 
 func newCodecMsgpackHandle() codec.Handle {
 	return &codec.MsgpackHandle{
-		WriteExt: true,
+		WriteExt:    true,
+		RawToString: true,
 	}
 }
 
