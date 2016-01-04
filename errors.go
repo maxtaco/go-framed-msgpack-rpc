@@ -45,12 +45,6 @@ func (p ProtocolNotFoundError) Error() string {
 	return "protocol not found: " + p.p
 }
 
-type DisconnectedError struct{}
-
-func (e DisconnectedError) Error() string {
-	return "disconnected; no connection to remote"
-}
-
 type AlreadyRegisteredError struct {
 	p string
 }
@@ -72,17 +66,19 @@ func NewTypeError(expected, actual interface{}) error {
 }
 
 type CanceledError struct {
-	p string
+	m string
+	s seqNumber
 }
 
 func newCanceledError(method string, seq seqNumber) CanceledError {
 	return CanceledError{
-		p: fmt.Sprintf("call canceled: method %s, seqid %d", method, seq),
+		m: method,
+		s: seq,
 	}
 }
 
 func (c CanceledError) Error() string {
-	return c.p
+	return fmt.Sprintf("call canceled: method %s, seqid %d", c.m, c.s)
 }
 
 type CallNotFoundError struct {

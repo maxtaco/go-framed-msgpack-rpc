@@ -9,10 +9,7 @@ import (
 type call struct {
 	ctx context.Context
 
-	// TODO respond with less than a full RPCMessage
 	resultCh chan RPCMessage
-
-	closedCh chan struct{}
 
 	method         string
 	seqid          seqNumber
@@ -21,14 +18,8 @@ type call struct {
 	errorUnwrapper ErrorUnwrapper
 }
 
-type callRetrieval struct {
-	seqid seqNumber
-	ch    chan *call
-}
-
 type callContainer struct {
 	calls    map[seqNumber]*call
-	callCh   chan *callRetrieval
 	callsMtx sync.Mutex
 	seqMtx   sync.Mutex
 	seqid    seqNumber
@@ -36,13 +27,10 @@ type callContainer struct {
 
 func newCallContainer() *callContainer {
 	return &callContainer{
-		calls:  make(map[seqNumber]*call),
-		callCh: make(chan *callRetrieval),
-		seqid:  0,
+		calls: make(map[seqNumber]*call),
+		seqid: 0,
 	}
 }
-
-// TODO implement stopCh and closedCh scheme to handle closing the container
 
 func (cc *callContainer) NewCall(ctx context.Context, m string, arg interface{}, res interface{}, u ErrorUnwrapper) *call {
 	return &call{

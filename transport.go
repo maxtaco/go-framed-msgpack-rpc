@@ -93,7 +93,7 @@ func (t *transport) IsConnected() bool {
 
 func (t *transport) Run() error {
 	if !t.IsConnected() {
-		return DisconnectedError{}
+		return io.EOF
 	}
 
 	select {
@@ -106,7 +106,7 @@ func (t *transport) Run() error {
 
 func (t *transport) RunAsync() error {
 	if !t.IsConnected() {
-		return DisconnectedError{}
+		return io.EOF
 	}
 
 	select {
@@ -139,10 +139,10 @@ func (t *transport) run() (err error) {
 
 	// Since the receiver might require the transport, we have to
 	// close it before terminating our loops
+	close(t.stopCh)
 	t.dispatcher.Close()
 	<-t.receiver.Close(err)
 	<-t.enc.Close()
-	close(t.stopCh)
 
 	// Cleanup
 	t.cdec.Close()
@@ -152,14 +152,14 @@ func (t *transport) run() (err error) {
 
 func (t *transport) getDispatcher() (dispatcher, error) {
 	if !t.IsConnected() {
-		return nil, DisconnectedError{}
+		return nil, io.EOF
 	}
 	return t.dispatcher, nil
 }
 
 func (t *transport) getReceiver() (receiver, error) {
 	if !t.IsConnected() {
-		return nil, DisconnectedError{}
+		return nil, io.EOF
 	}
 	return t.receiver, nil
 }

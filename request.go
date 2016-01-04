@@ -57,11 +57,8 @@ func (r *callRequest) LogCompletion(res interface{}, err error) {
 func (r *callRequest) Reply(enc encoder, res interface{}, err error) error {
 	select {
 	case <-r.ctx.Done():
-		// TODO: Use newCanceledError and log.Info:
-		// https://github.com/keybase/go-framed-msgpack-rpc/issues/29
-		// .
 		err = newCanceledError(r.Name(), r.SeqNo())
-		r.log.Warning(err.Error())
+		r.log.Info(err.Error())
 	default:
 		v := []interface{}{
 			MethodResponse,
@@ -70,6 +67,7 @@ func (r *callRequest) Reply(enc encoder, res interface{}, err error) error {
 			res,
 		}
 		errCh := enc.Encode(v)
+		// TODO investigate hypothetical server-side hang here
 		err = <-errCh
 		if err != nil {
 			r.log.Warning("Reply error for %d: %s", r.SeqNo(), err.Error())

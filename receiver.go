@@ -33,8 +33,6 @@ type receiveHandler struct {
 	// Closed once all loops are finished
 	closedCh chan struct{}
 
-	rmCallCh chan callRetrieval
-
 	// Task loop channels
 	taskBeginCh  chan *task
 	taskCancelCh chan seqNumber
