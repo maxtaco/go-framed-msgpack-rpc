@@ -17,7 +17,8 @@ type RPCData interface {
 	Err() error
 	Res() interface{}
 	ResponseCh() chan RPCMessage
-	DataLength() int
+	MinLength() int
+	MaxLength() int
 	DecodeData(int, decoder, *protocolHandler, *callContainer) error
 }
 
@@ -54,12 +55,16 @@ type RPCCallData struct {
 	arg   interface{}
 }
 
-func (RPCCallData) DataLength() int {
+func (RPCCallData) MinLength() int {
+	return 3
+}
+
+func (RPCCallData) MaxLength() int {
 	return 3
 }
 
 func (r *RPCCallData) DecodeData(l int, d decoder, p *protocolHandler, _ *callContainer) (err error) {
-	if l != r.DataLength() {
+	if l < r.MinLength() || l > r.MaxLength() {
 		return errors.New("wrong message length")
 	}
 	if err = d.Decode(&r.seqno); err != nil {
@@ -92,12 +97,16 @@ type RPCResponseData struct {
 	err error
 }
 
-func (r RPCResponseData) DataLength() int {
-	return 2
+func (r RPCResponseData) MinLength() int {
+	return 3
+}
+
+func (r RPCResponseData) MaxLength() int {
+	return 3
 }
 
 func (r *RPCResponseData) DecodeData(l int, d decoder, _ *protocolHandler, cc *callContainer) error {
-	if l != 3 {
+	if l < r.MinLength() || l > r.MaxLength() {
 		return errors.New("wrong message length")
 	}
 	var seqNo seqNumber
@@ -169,7 +178,7 @@ type RPCNotifyData struct {
 }
 
 func (r *RPCNotifyData) DecodeData(l int, d decoder, p *protocolHandler, _ *callContainer) (err error) {
-	if l != r.DataLength() {
+	if l < r.MinLength() || l > r.MaxLength() {
 		return errors.New("wrong message length")
 	}
 	if err = d.Decode(&r.name); err != nil {
@@ -181,7 +190,11 @@ func (r *RPCNotifyData) DecodeData(l int, d decoder, p *protocolHandler, _ *call
 	return d.Decode(r.arg)
 }
 
-func (RPCNotifyData) DataLength() int {
+func (RPCNotifyData) MinLength() int {
+	return 2
+}
+
+func (RPCNotifyData) MaxLength() int {
 	return 2
 }
 
@@ -204,7 +217,7 @@ type RPCCancelData struct {
 }
 
 func (r *RPCCancelData) DecodeData(l int, d decoder, p *protocolHandler, _ *callContainer) (err error) {
-	if l != r.DataLength() {
+	if l < r.MinLength() || l > r.MaxLength() {
 		return errors.New("wrong message length")
 	}
 	if err = d.Decode(&r.seqno); err != nil {
@@ -213,17 +226,11 @@ func (r *RPCCancelData) DecodeData(l int, d decoder, p *protocolHandler, _ *call
 	return d.Decode(&r.name)
 }
 
-func (r RPCCancelData) EncodeData(v []interface{}) error {
-	// TODO handle wrapErrorFunc correctly
-	if len(v) != r.DataLength() {
-		return errors.New("wrong message length")
-	}
-	v[0] = r.seqno
-	v[1] = r.name
-	return nil
+func (RPCCancelData) MinLength() int {
+	return 2
 }
 
-func (RPCCancelData) DataLength() int {
+func (RPCCancelData) MaxLength() int {
 	return 2
 }
 
