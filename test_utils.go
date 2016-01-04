@@ -339,7 +339,7 @@ func newBlockingMockCodec(elems ...interface{}) *blockingMockCodec {
 	md := newMockCodec(elems...)
 	return &blockingMockCodec{
 		mockCodec: *md,
-		ch:        make(chan struct{}),
+		ch:        make(chan struct{}, 32),
 	}
 }
 
