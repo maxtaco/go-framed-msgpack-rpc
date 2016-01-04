@@ -115,7 +115,7 @@ func (r *receiveHandler) handleReceiveDispatch(req request) error {
 	serveHandler, wrapErrorFunc, se := r.protHandler.findServeHandler(req.Name())
 	if se != nil {
 		req.LogInvocation(se)
-		return req.Reply(r.writer, nil, se)
+		return req.Reply(r.writer, nil, wrapError(wrapErrorFunc, se))
 	}
 	r.taskBeginCh <- &task{req.SeqNo(), req.CancelFunc()}
 	req.Serve(r.writer, serveHandler, wrapErrorFunc)

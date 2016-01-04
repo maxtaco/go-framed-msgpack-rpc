@@ -7,7 +7,7 @@ import (
 type request interface {
 	RPCMessage
 	CancelFunc() context.CancelFunc
-	Reply(encoder, interface{}, error) error
+	Reply(encoder, interface{}, interface{}) error
 	Serve(encoder, *ServeHandlerDescription, WrapErrorFunc)
 	LogInvocation(err error)
 	LogCompletion(res interface{}, err error)
@@ -24,9 +24,9 @@ func (req *requestImpl) CancelFunc() context.CancelFunc {
 	return req.cancelFunc
 }
 
-func (r *requestImpl) LogInvocation(error)                     {}
-func (r *requestImpl) LogCompletion(interface{}, error)        {}
-func (r *requestImpl) Reply(encoder, interface{}, error) error { return nil }
+func (r *requestImpl) LogInvocation(error)                           {}
+func (r *requestImpl) LogCompletion(interface{}, error)              {}
+func (r *requestImpl) Reply(encoder, interface{}, interface{}) error { return nil }
 func (r *requestImpl) Serve(encoder, *ServeHandlerDescription, WrapErrorFunc) {
 }
 
@@ -54,7 +54,7 @@ func (r *callRequest) LogCompletion(res interface{}, err error) {
 	r.log.ServerReply(r.SeqNo(), r.Name(), err, res)
 }
 
-func (r *callRequest) Reply(enc encoder, res interface{}, err error) error {
+func (r *callRequest) Reply(enc encoder, res interface{}, errArg interface{}) (err error) {
 	select {
 	case <-r.ctx.Done():
 		err = newCanceledError(r.Name(), r.SeqNo())
@@ -63,7 +63,7 @@ func (r *callRequest) Reply(enc encoder, res interface{}, err error) error {
 		v := []interface{}{
 			MethodResponse,
 			r.SeqNo(),
-			err,
+			errArg,
 			res,
 		}
 		errCh := enc.Encode(v)
@@ -86,7 +86,7 @@ func (r *callRequest) Serve(transmitter encoder, handler *ServeHandlerDescriptio
 		res, err := handler.Handler(r.ctx, arg)
 		prof.Stop()
 		r.LogCompletion(res, err)
-		r.Reply(transmitter, res, err)
+		r.Reply(transmitter, res, wrapError(wrapErrorFunc, err))
 	}()
 }
 

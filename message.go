@@ -6,7 +6,6 @@ import (
 
 type RPCMessage interface {
 	Type() MethodType
-	Encode(e encoder) <-chan error
 	Decode(l int, d decoder, p *protocolHandler, cc *callContainer) error
 	RPCData
 }
@@ -20,7 +19,6 @@ type RPCData interface {
 	ResponseCh() chan RPCMessage
 	DataLength() int
 	DecodeData(int, decoder, *protocolHandler, *callContainer) error
-	EncodeData([]interface{}) error
 }
 
 type BasicRPCData struct{}
@@ -76,16 +74,6 @@ func (r *RPCCallData) DecodeData(l int, d decoder, p *protocolHandler, _ *callCo
 	return d.Decode(r.arg)
 }
 
-func (r RPCCallData) EncodeData(v []interface{}) error {
-	if len(v) != r.DataLength() {
-		return errors.New("wrong message length")
-	}
-	v[0] = r.seqno
-	v[1] = r.name
-	v[2] = r.arg
-	return nil
-}
-
 func (r RPCCallData) SeqNo() seqNumber {
 	return r.seqno
 }
@@ -106,14 +94,6 @@ type RPCResponseData struct {
 
 func (r RPCResponseData) DataLength() int {
 	return 2
-}
-
-func (r RPCResponseData) EncodeData(v []interface{}) error {
-	if len(v) != r.DataLength() {
-		return errors.New("wrong message length")
-	}
-	// TODO finish
-	return nil
 }
 
 func (r *RPCResponseData) DecodeData(l int, d decoder, _ *protocolHandler, cc *callContainer) error {
@@ -201,15 +181,6 @@ func (r *RPCNotifyData) DecodeData(l int, d decoder, p *protocolHandler, _ *call
 	return d.Decode(r.arg)
 }
 
-func (r RPCNotifyData) EncodeData(v []interface{}) error {
-	if len(v) != r.DataLength() {
-		return errors.New("wrong message length")
-	}
-	v[0] = r.name
-	v[1] = r.arg
-	return nil
-}
-
 func (RPCNotifyData) DataLength() int {
 	return 2
 }
@@ -272,17 +243,6 @@ type RPCCall struct {
 
 func (c RPCCall) Type() MethodType {
 	return c.typ
-}
-
-func (c RPCCall) Encode(e encoder) <-chan error {
-	v := make([]interface{}, 1+c.DataLength())
-	v[0] = c.typ
-	if err := c.EncodeData(v[1:]); err != nil {
-		ch := make(chan error, 1)
-		ch <- err
-		return ch
-	}
-	return e.Encode(v)
 }
 
 func (c *RPCCall) Decode(l int, d decoder, p *protocolHandler, cc *callContainer) error {
