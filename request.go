@@ -81,13 +81,12 @@ func (r *callRequest) Serve(transmitter encoder, handler *ServeHandlerDescriptio
 	prof := r.log.StartProfiler("serve %s", r.Name())
 	arg := r.Arg()
 
-	go func() {
-		r.LogInvocation(nil)
-		res, err := handler.Handler(r.ctx, arg)
-		prof.Stop()
-		r.LogCompletion(res, err)
-		r.Reply(transmitter, res, wrapError(wrapErrorFunc, err))
-	}()
+	r.LogInvocation(nil)
+	res, err := handler.Handler(r.ctx, arg)
+	prof.Stop()
+	r.LogCompletion(res, err)
+
+	r.Reply(transmitter, res, wrapError(wrapErrorFunc, err))
 }
 
 type notifyRequest struct {
@@ -119,12 +118,10 @@ func (r *notifyRequest) Serve(transmitter encoder, handler *ServeHandlerDescript
 	prof := r.log.StartProfiler("serve-notify %s", r.Name())
 	arg := r.Arg()
 
-	go func() {
-		r.LogInvocation(nil)
-		_, err := handler.Handler(r.ctx, arg)
-		prof.Stop()
-		r.LogCompletion(nil, err)
-	}()
+	r.LogInvocation(nil)
+	_, err := handler.Handler(r.ctx, arg)
+	prof.Stop()
+	r.LogCompletion(nil, err)
 }
 
 func newRequest(rpc RPCMessage, log LogInterface) request {
