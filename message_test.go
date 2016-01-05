@@ -45,7 +45,7 @@ func runMessageTest(t *testing.T, v []interface{}) (RPCMessage, error) {
 	p := createMessageTestProtocol()
 
 	c := &RPCCall{}
-	err = c.Decode(len(v), dec, p, nil)
+	err = c.Decode(len(v), dec, p, newCallContainer())
 	return c, err
 }
 
@@ -64,33 +64,40 @@ func TestMessageDecodeInvalidType(t *testing.T) {
 	v := []interface{}{"hello", seqNumber(0), "invalid", new(interface{})}
 
 	_, err := runMessageTest(t, v)
-	require.EqualError(t, err, "[pos 1]: Unhandled single-byte unsigned integer value: Unrecognized descriptor byte: a5", "Expected error attempting to call an invalid method type")
+	require.EqualError(t, err, "[pos 1]: Unhandled single-byte unsigned integer value: Unrecognized descriptor byte: a5")
 }
 
 func TestMessageDecodeInvalidMethodType(t *testing.T) {
 	v := []interface{}{MethodType(999), seqNumber(0), "invalid", new(interface{})}
 
 	_, err := runMessageTest(t, v)
-	require.EqualError(t, err, "invalid RPC type", "Expected error attempting to call an invalid method type")
+	require.EqualError(t, err, "invalid RPC type")
 }
 
 func TestMessageDecodeInvalidProtocol(t *testing.T) {
 	v := []interface{}{MethodCall, seqNumber(0), "nonexistent.broken", new(interface{})}
 
 	_, err := runMessageTest(t, v)
-	require.EqualError(t, err, "protocol not found: nonexistent", "Expected error attempting to call a nonexistent method")
+	require.EqualError(t, err, "protocol not found: nonexistent")
 }
 
 func TestMessageDecodeInvalidMethod(t *testing.T) {
 	v := []interface{}{MethodCall, seqNumber(0), "abc.invalid", new(interface{})}
 
 	_, err := runMessageTest(t, v)
-	require.EqualError(t, err, "method 'invalid' not found in protocol 'abc'", "Expected error attempting to call a nonexistent method")
+	require.EqualError(t, err, "method 'invalid' not found in protocol 'abc'")
 }
 
 func TestMessageDecodeWrongMessageLength(t *testing.T) {
 	v := []interface{}{MethodCall, seqNumber(0), "abc.invalid"}
 
 	_, err := runMessageTest(t, v)
-	require.EqualError(t, err, "wrong message length", "Expected error attempting to call a nonexistent method")
+	require.EqualError(t, err, "wrong message length")
+}
+
+func TestMessageDecodeResponseNilCall(t *testing.T) {
+	v := []interface{}{MethodResponse, seqNumber(0), 32, "hi"}
+
+	_, err := runMessageTest(t, v)
+	require.EqualError(t, err, "Call not found for sequence number 0")
 }
