@@ -3,6 +3,8 @@ package rpc
 import (
 	"errors"
 	"fmt"
+
+	"golang.org/x/net/context"
 )
 
 type rpcMessage interface {
@@ -14,7 +16,31 @@ type rpcMessage interface {
 	DecodeMessage(int, decoder, *protocolHandler, *callContainer) error
 }
 
+type BasicRPCData struct {
+	ctx context.Context
+}
+
+func (r *BasicRPCData) Context() context.Context {
+	if r.ctx == nil {
+		r.ctx = context.Background()
+	}
+	return r.ctx
+}
+
+func (r *BasicRPCData) loadContext(l int, d decoder) error {
+	if l == 0 {
+		return nil
+	}
+	tags := make(CtxRpcTags)
+	if err := d.Decode(&tags); err != nil {
+		return err
+	}
+	r.ctx = AddRpcTagsToContext(context.Background(), tags)
+	return nil
+}
+
 type rpcCallMessage struct {
+	BasicRPCData
 	seqno seqNumber
 	name  string
 	arg   interface{}
@@ -35,7 +61,10 @@ func (r *rpcCallMessage) DecodeMessage(l int, d decoder, p *protocolHandler, _ *
 	if r.arg, r.err = p.getArg(r.name); r.err != nil {
 		return r.err
 	}
-	r.err = d.Decode(r.arg)
+	if r.err = d.Decode(r.arg); r.err != nil {
+		return r.err
+	}
+	r.err = r.loadContext(l-r.MinLength(), d)
 	return r.err
 }
 
@@ -159,6 +188,7 @@ func (r rpcResponseMessage) ResponseCh() chan *rpcResponseMessage {
 }
 
 type rpcNotifyMessage struct {
+	BasicRPCData
 	name string
 	arg  interface{}
 	err  error
@@ -171,7 +201,10 @@ func (r *rpcNotifyMessage) DecodeMessage(l int, d decoder, p *protocolHandler, _
 	if r.arg, r.err = p.getArg(r.name); r.err != nil {
 		return r.err
 	}
-	r.err = d.Decode(r.arg)
+	if r.err = d.Decode(r.arg); r.err != nil {
+		return r.err
+	}
+	r.err = r.loadContext(l-r.MinLength(), d)
 	return r.err
 }
 

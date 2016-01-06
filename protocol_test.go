@@ -99,6 +99,7 @@ func TestLongCallCancel(t *testing.T) {
 	defer endTest(t, conn, listener)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	ctx = AddRpcTagsToContext(ctx, CtxRpcTags{"hello": []string{"world"}})
 	var longResult int
 	var err error
 
@@ -121,7 +122,11 @@ func TestLongCallCancel(t *testing.T) {
 	require.EqualError(t, res.err, context.Canceled.Error())
 	require.Equal(t, 0, res.res, "call should be canceled")
 
-	res = <-resultCh
-	require.Nil(t, res.err, "call should have succeeded")
-	require.Equal(t, -1, res.res, "canceled call should have set the result to canceled")
+	longResult, err = cli.LongCallResult(context.Background())
+	require.Nil(t, err, "call should have succeeded")
+	require.Equal(t, -1, longResult, "canceled call should have set the result to canceled")
+
+	debugTags, err := cli.LongCallDebugTags(context.Background())
+	require.Nil(t, err, "call should have succeeded")
+	require.Equal(t, CtxRpcTags{"hello": []interface{}{"world"}}, debugTags, "canceled call should have set the debug tags")
 }
