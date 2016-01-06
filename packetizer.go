@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 
 	"github.com/ugorji/go/codec"
 )
@@ -15,21 +14,20 @@ type packetizer interface {
 }
 
 type packetHandler struct {
-	dec           decoder
-	reader        io.Reader
-	frameDecoders decoderPool
-	protocols     *protocolHandler
-	calls         *callContainer
-	mtx           sync.Mutex
+	dec          decoder
+	reader       io.Reader
+	frameDecoder *codec.Decoder
+	protocols    *protocolHandler
+	calls        *callContainer
 }
 
 func newPacketHandler(reader io.Reader, protocols *protocolHandler, calls *callContainer) *packetHandler {
 	return &packetHandler{
-		reader:        reader,
-		dec:           codec.NewDecoder(reader, newCodecMsgpackHandle()),
-		frameDecoders: makeDecoderPool(),
-		protocols:     protocols,
-		calls:         calls,
+		reader:       reader,
+		dec:          codec.NewDecoder(reader, newCodecMsgpackHandle()),
+		frameDecoder: codec.NewDecoderBytes([]byte{}, newCodecMsgpackHandle()),
+		protocols:    protocols,
+		calls:        calls,
 	}
 }
 
@@ -53,22 +51,17 @@ func (p *packetHandler) NextFrame() (RPCMessage, error) {
 	if nb < 0x91 || nb > 0x9f {
 		return nil, NewPacketizerError("wrong message structure prefix (%d)", nb)
 	}
-	dec := p.frameDecoders.getDecoder(bytes[1:])
-	defer p.frameDecoders.returnDecoder(dec)
+	p.frameDecoder.ResetBytes(bytes[1:])
 
 	rpc := &RPCCall{}
-	err = rpc.Decode(nb-0x90, dec, p.protocols, p.calls)
+	err = rpc.Decode(nb-0x90, p.frameDecoder, p.protocols, p.calls)
 	return rpc, err
 }
 
 func (p *packetHandler) loadNextFrame() ([]byte, error) {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-
 	// Get the packet length
 	var l int
-	err := p.dec.Decode(&l)
-	if err != nil {
+	if err := p.dec.Decode(&l); err != nil {
 		if _, ok := err.(*net.OpError); ok {
 			// If the connection is reset or has been closed on this side,
 			// return EOF

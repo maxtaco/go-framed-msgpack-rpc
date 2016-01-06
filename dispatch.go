@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"fmt"
 	"io"
 
 	"golang.org/x/net/context"
@@ -57,7 +56,6 @@ func (d *dispatch) Call(ctx context.Context, name string, arg interface{}, res i
 			return err
 		}
 	case <-c.ctx.Done():
-		fmt.Printf("returning from call\n")
 		return d.handleCancel(c)
 	case <-d.stopCh:
 		return io.EOF

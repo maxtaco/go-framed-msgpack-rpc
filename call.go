@@ -19,8 +19,8 @@ type call struct {
 }
 
 type callContainer struct {
+	callsMtx sync.RWMutex
 	calls    map[seqNumber]*call
-	callsMtx sync.Mutex
 	seqMtx   sync.Mutex
 	seqid    seqNumber
 }
@@ -61,8 +61,8 @@ func (cc *callContainer) AddCall(c *call) {
 }
 
 func (cc *callContainer) RetrieveCall(seqid seqNumber) *call {
-	cc.callsMtx.Lock()
-	defer cc.callsMtx.Unlock()
+	cc.callsMtx.RLock()
+	defer cc.callsMtx.RUnlock()
 
 	return cc.calls[seqid]
 }

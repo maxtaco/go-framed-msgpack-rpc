@@ -37,9 +37,9 @@ type protocolMap map[string]Protocol
 type seqNumber int
 
 type protocolHandler struct {
-	protocols protocolMap
 	wef       WrapErrorFunc
-	mtx       sync.Mutex
+	mtx       sync.RWMutex
+	protocols protocolMap
 }
 
 func newProtocolHandler(wef WrapErrorFunc) *protocolHandler {
@@ -61,8 +61,8 @@ func (h *protocolHandler) registerProtocol(p Protocol) error {
 }
 
 func (h *protocolHandler) findServeHandler(name string) (*ServeHandlerDescription, WrapErrorFunc, error) {
-	h.mtx.Lock()
-	defer h.mtx.Unlock()
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
 
 	p, m := splitMethodName(name)
 	prot, found := h.protocols[p]

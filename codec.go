@@ -10,33 +10,12 @@ type decoder interface {
 	Decode(interface{}) error
 }
 
+// TODO rename this interface to EncodeAndSend
 type encoder interface {
 	Encode(interface{}) <-chan error
 }
 
 const poolSize int = 10
-
-type decoderPool chan *codec.Decoder
-
-func makeDecoderPool() decoderPool {
-	p := make(decoderPool, poolSize)
-
-	for i := 0; i < poolSize; i++ {
-		p <- codec.NewDecoderBytes([]byte{}, newCodecMsgpackHandle())
-	}
-
-	return p
-}
-
-func (p decoderPool) getDecoder(bytes []byte) *codec.Decoder {
-	dec := <-p
-	dec.ResetBytes(bytes)
-	return dec
-}
-
-func (p decoderPool) returnDecoder(dec *codec.Decoder) {
-	p <- dec
-}
 
 type encoderPool chan *codec.Encoder
 
