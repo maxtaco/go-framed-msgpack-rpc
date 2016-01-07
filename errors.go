@@ -88,3 +88,11 @@ type CallNotFoundError struct {
 func (c CallNotFoundError) Error() string {
 	return fmt.Sprintf("Call not found for sequence number %d", c.seqno)
 }
+
+type NilResultError struct {
+	seqno seqNumber
+}
+
+func (c NilResultError) Error() string {
+	return fmt.Sprintf("Nil result supplied for sequence number %d", c.seqno)
+}

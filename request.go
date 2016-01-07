@@ -123,13 +123,3 @@ func (r *notifyRequest) Serve(transmitter encoder, handler *ServeHandlerDescript
 	prof.Stop()
 	r.LogCompletion(nil, err)
 }
-
-func newRequest(rpc RPCMessage, log LogInterface) request {
-	switch rpc.Type() {
-	case MethodCall:
-		return newCallRequest(rpc, log)
-	case MethodNotify:
-		return newNotifyRequest(rpc, log)
-	}
-	return nil
-}

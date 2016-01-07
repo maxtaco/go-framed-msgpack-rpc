@@ -38,8 +38,7 @@ type receiveHandler struct {
 	taskCancelCh chan seqNumber
 	taskEndCh    chan seqNumber
 
-	log             LogInterface
-	messageHandlers map[MethodType]messageHandler
+	log LogInterface
 }
 
 func newReceiveHandler(enc encoder, protHandler *protocolHandler, l LogInterface) *receiveHandler {
@@ -56,12 +55,6 @@ func newReceiveHandler(enc encoder, protHandler *protocolHandler, l LogInterface
 		taskEndCh:    make(chan seqNumber),
 
 		log: l,
-	}
-	r.messageHandlers = map[MethodType]messageHandler{
-		MethodNotify:   r.receiveNotify,
-		MethodCall:     r.receiveCall,
-		MethodResponse: r.receiveResponse,
-		MethodCancel:   r.receiveCancel,
 	}
 	go r.taskLoop()
 	return r
@@ -87,21 +80,28 @@ func (r *receiveHandler) taskLoop() {
 	}
 }
 
-func (d *receiveHandler) Receive(rpc RPCMessage) error {
-	handler, ok := d.messageHandlers[rpc.Type()]
-	if !ok {
+func (r *receiveHandler) Receive(rpc RPCMessage) error {
+	switch rpc.Type() {
+	case MethodNotify:
+		return r.receiveNotify(rpc)
+	case MethodCall:
+		return r.receiveCall(rpc)
+	case MethodResponse:
+		return r.receiveResponse(rpc)
+	case MethodCancel:
+		return r.receiveCancel(rpc)
+	default:
 		return NewDispatcherError("invalid message type")
 	}
-	return handler(rpc)
 }
 
 func (r *receiveHandler) receiveNotify(rpc RPCMessage) error {
-	req := newRequest(rpc, r.log)
+	req := newNotifyRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 
 func (r *receiveHandler) receiveCall(rpc RPCMessage) error {
-	req := newRequest(rpc, r.log)
+	req := newCallRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 

@@ -131,7 +131,7 @@ func (r *RPCResponseData) DecodeData(l int, d decoder, _ *protocolHandler, cc *c
 
 	// Decode the result
 	if r.c.res == nil {
-		r.c.res = new(interface{})
+		return NilResultError{seqNo}
 	}
 	return d.Decode(r.c.res)
 }

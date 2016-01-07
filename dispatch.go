@@ -16,8 +16,6 @@ type dispatch struct {
 	writer encoder
 	calls  *callContainer
 
-	seqid seqNumber
-
 	// Stops all loops when closed
 	stopCh chan struct{}
 	// Closed once all loops are finished
@@ -33,8 +31,7 @@ func newDispatch(enc encoder, calls *callContainer, l LogInterface) *dispatch {
 		stopCh:   make(chan struct{}),
 		closedCh: make(chan struct{}),
 
-		seqid: 0,
-		log:   l,
+		log: l,
 	}
 	return d
 }
@@ -96,6 +93,14 @@ func (d *dispatch) Close() {
 
 func (d *dispatch) handleCancel(c *call) error {
 	d.log.ClientCancel(c.seqid, c.method, nil)
-	d.writer.Encode([]interface{}{MethodCancel, c.seqid, c.method})
+	errCh := d.writer.Encode([]interface{}{MethodCancel, c.seqid, c.method})
+	select {
+	case err := <-errCh:
+		if err != nil {
+			d.log.Info("error while dispatching cancellation: %+v", err.Error())
+		}
+	default:
+		// Don't block on sending the error
+	}
 	return newCanceledError(c.method, c.seqid)
 }

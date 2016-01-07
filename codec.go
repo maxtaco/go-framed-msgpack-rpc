@@ -52,7 +52,7 @@ type writeBundle struct {
 }
 
 type framedMsgpackEncoder struct {
-	encoders encoderPool
+	handle   codec.Handle
 	writer   io.Writer
 	writeCh  chan writeBundle
 	doneCh   chan struct{}
@@ -61,7 +61,7 @@ type framedMsgpackEncoder struct {
 
 func newFramedMsgpackEncoder(writer io.Writer) *framedMsgpackEncoder {
 	e := &framedMsgpackEncoder{
-		encoders: makeEncoderPool(),
+		handle:   newCodecMsgpackHandle(),
 		writer:   writer,
 		writeCh:  make(chan writeBundle),
 		doneCh:   make(chan struct{}),
@@ -71,19 +71,19 @@ func newFramedMsgpackEncoder(writer io.Writer) *framedMsgpackEncoder {
 	return e
 }
 
-func (e *framedMsgpackEncoder) encodeToBytes(i interface{}) (v []byte, err error) {
-	enc := e.encoders.getEncoder(&v)
-	defer e.encoders.returnEncoder(enc)
+func (e *framedMsgpackEncoder) encodeToBytes(enc *codec.Encoder, i interface{}) (v []byte, err error) {
+	enc.ResetBytes(&v)
 	err = enc.Encode(i)
 	return v, err
 }
 
 func (e *framedMsgpackEncoder) encodeFrame(i interface{}) ([]byte, error) {
-	content, err := e.encodeToBytes(i)
+	enc := codec.NewEncoderBytes(&[]byte{}, e.handle)
+	content, err := e.encodeToBytes(enc, i)
 	if err != nil {
 		return nil, err
 	}
-	length, err := e.encodeToBytes(len(content))
+	length, err := e.encodeToBytes(enc, len(content))
 	if err != nil {
 		return nil, err
 	}
