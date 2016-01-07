@@ -5,7 +5,7 @@ import (
 )
 
 type request interface {
-	RPCMessage
+	RPCData
 	CancelFunc() context.CancelFunc
 	Reply(encoder, interface{}, interface{}) error
 	Serve(encoder, *ServeHandlerDescription, WrapErrorFunc)
@@ -14,7 +14,6 @@ type request interface {
 }
 
 type requestImpl struct {
-	RPCMessage
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 	log        LogInterface
@@ -31,14 +30,15 @@ func (r *requestImpl) Serve(encoder, *ServeHandlerDescription, WrapErrorFunc) {
 }
 
 type callRequest struct {
+	*RPCCallData
 	requestImpl
 }
 
-func newCallRequest(rpc RPCMessage, log LogInterface) *callRequest {
+func newCallRequest(rpc *RPCCallData, log LogInterface) *callRequest {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &callRequest{
+		RPCCallData: rpc,
 		requestImpl: requestImpl{
-			RPCMessage: rpc,
 			ctx:        ctx,
 			cancelFunc: cancel,
 			log:        log,
@@ -90,14 +90,15 @@ func (r *callRequest) Serve(transmitter encoder, handler *ServeHandlerDescriptio
 }
 
 type notifyRequest struct {
+	*RPCNotifyData
 	requestImpl
 }
 
-func newNotifyRequest(rpc RPCMessage, log LogInterface) *notifyRequest {
+func newNotifyRequest(rpc *RPCNotifyData, log LogInterface) *notifyRequest {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &notifyRequest{
+		RPCNotifyData: rpc,
 		requestImpl: requestImpl{
-			RPCMessage: rpc,
 			ctx:        ctx,
 			cancelFunc: cancel,
 			log:        log,

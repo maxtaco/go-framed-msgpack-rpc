@@ -10,7 +10,7 @@ import (
 )
 
 type packetizer interface {
-	NextFrame() (RPCMessage, error)
+	NextFrame() (RPCData, error)
 }
 
 type packetHandler struct {
@@ -31,7 +31,7 @@ func newPacketHandler(reader io.Reader, protocols *protocolHandler, calls *callC
 	}
 }
 
-func (p *packetHandler) NextFrame() (RPCMessage, error) {
+func (p *packetHandler) NextFrame() (RPCData, error) {
 	bytes, err := p.loadNextFrame()
 	if err != nil {
 		return nil, err
@@ -53,9 +53,7 @@ func (p *packetHandler) NextFrame() (RPCMessage, error) {
 	}
 	p.frameDecoder.ResetBytes(bytes[1:])
 
-	rpc := &RPCCall{}
-	err = rpc.Decode(nb-0x90, p.frameDecoder, p.protocols, p.calls)
-	return rpc, err
+	return DecodeRPC(nb-0x90, p.frameDecoder, p.protocols, p.calls)
 }
 
 func (p *packetHandler) loadNextFrame() ([]byte, error) {

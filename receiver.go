@@ -6,15 +6,13 @@ import (
 	"golang.org/x/net/context"
 )
 
-type messageHandler func(RPCMessage) error
-
 type task struct {
 	seqid      seqNumber
 	cancelFunc context.CancelFunc
 }
 
 type receiver interface {
-	Receive(RPCMessage) error
+	Receive(RPCData) error
 	Close(err error) chan struct{}
 	AddCloseListener(chan<- error)
 }
@@ -80,32 +78,40 @@ func (r *receiveHandler) taskLoop() {
 	}
 }
 
-func (r *receiveHandler) Receive(rpc RPCMessage) error {
+func (r *receiveHandler) Receive(rpc RPCData) error {
 	switch rpc.Type() {
 	case MethodNotify:
-		return r.receiveNotify(rpc)
+		if rpcData, ok := rpc.(*RPCNotifyData); ok {
+			return r.receiveNotify(rpcData)
+		}
 	case MethodCall:
-		return r.receiveCall(rpc)
+		if rpcData, ok := rpc.(*RPCCallData); ok {
+			return r.receiveCall(rpcData)
+		}
 	case MethodResponse:
-		return r.receiveResponse(rpc)
+		if rpcData, ok := rpc.(*RPCResponseData); ok {
+			return r.receiveResponse(rpcData)
+		}
 	case MethodCancel:
-		return r.receiveCancel(rpc)
+		if rpcData, ok := rpc.(*RPCCancelData); ok {
+			return r.receiveCancel(rpcData)
+		}
 	default:
-		return NewDispatcherError("invalid message type")
 	}
+	return NewDispatcherError("invalid message type")
 }
 
-func (r *receiveHandler) receiveNotify(rpc RPCMessage) error {
+func (r *receiveHandler) receiveNotify(rpc *RPCNotifyData) error {
 	req := newNotifyRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 
-func (r *receiveHandler) receiveCall(rpc RPCMessage) error {
+func (r *receiveHandler) receiveCall(rpc *RPCCallData) error {
 	req := newCallRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 
-func (r *receiveHandler) receiveCancel(rpc RPCMessage) error {
+func (r *receiveHandler) receiveCancel(rpc *RPCCancelData) error {
 	r.log.ServerCancelCall(rpc.SeqNo(), rpc.Name())
 	r.taskCancelCh <- rpc.SeqNo()
 	return nil
@@ -122,7 +128,7 @@ func (r *receiveHandler) handleReceiveDispatch(req request) error {
 	return nil
 }
 
-func (r *receiveHandler) receiveResponse(rpc RPCMessage) (err error) {
+func (r *receiveHandler) receiveResponse(rpc *RPCResponseData) (err error) {
 	callResponseCh := rpc.ResponseCh()
 
 	if callResponseCh == nil {

@@ -9,7 +9,7 @@ import (
 type call struct {
 	ctx context.Context
 
-	resultCh chan RPCMessage
+	resultCh chan *RPCResponseData
 
 	method         string
 	seqid          seqNumber
@@ -35,7 +35,7 @@ func newCallContainer() *callContainer {
 func (cc *callContainer) NewCall(ctx context.Context, m string, arg interface{}, res interface{}, u ErrorUnwrapper) *call {
 	return &call{
 		ctx:            ctx,
-		resultCh:       make(chan RPCMessage),
+		resultCh:       make(chan *RPCResponseData),
 		method:         m,
 		arg:            arg,
 		res:            res,

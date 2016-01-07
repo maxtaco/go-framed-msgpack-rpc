@@ -40,12 +40,9 @@ func dispatchTestCall(t *testing.T) (dispatcher, *callContainer, chan error) {
 }
 
 func sendResponse(c *call, err error) {
-	c.resultCh <- &RPCCall{
-		typ: MethodResponse,
-		RPCData: &RPCResponseData{
-			err: err,
-			c:   c,
-		},
+	c.resultCh <- &RPCResponseData{
+		err: err,
+		c:   c,
 	}
 }
 
