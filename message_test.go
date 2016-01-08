@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/ugorji/go/codec"
 	"golang.org/x/net/context"
 )
 
@@ -30,22 +29,13 @@ func createMessageTestProtocol() *protocolHandler {
 
 func runMessageTest(t *testing.T, v []interface{}) (rpcMessage, error) {
 	var buf bytes.Buffer
-	mh := newCodecMsgpackHandle()
-	enc := codec.NewEncoder(&buf, mh)
-	dec := codec.NewDecoder(&buf, mh)
+	enc := newFramedMsgpackEncoder(&buf)
+	pkt := newPacketHandler(&buf, createMessageTestProtocol(), newCallContainer())
 
-	err := enc.Encode(v)
+	err := <-enc.Encode(v)
 	require.Nil(t, err, "expected encoding to succeed")
 
-	// Advance the buffer past the msgpack fixarray descriptor byte
-	b, _ := buf.ReadByte()
-	nb := int(b)
-	require.Equal(t, 0x90+len(v), nb)
-
-	p := createMessageTestProtocol()
-
-	r, err := decodeRPC(len(v), dec, p, newCallContainer())
-	return r, err
+	return pkt.NextFrame()
 }
 
 func TestMessageDecodeValid(t *testing.T) {
