@@ -79,26 +79,18 @@ func (r *receiveHandler) taskLoop() {
 }
 
 func (r *receiveHandler) Receive(rpc rpcMessage) error {
-	switch rpc.Type() {
-	case MethodNotify:
-		if rpcData, ok := rpc.(*rpcNotifyMessage); ok {
-			return r.receiveNotify(rpcData)
-		}
-	case MethodCall:
-		if rpcData, ok := rpc.(*rpcCallMessage); ok {
-			return r.receiveCall(rpcData)
-		}
-	case MethodResponse:
-		if rpcData, ok := rpc.(*rpcResponseMessage); ok {
-			return r.receiveResponse(rpcData)
-		}
-	case MethodCancel:
-		if rpcData, ok := rpc.(*rpcCancelMessage); ok {
-			return r.receiveCancel(rpcData)
-		}
+	switch message := rpc.(type) {
+	case *rpcNotifyMessage:
+		return r.receiveNotify(message)
+	case *rpcCallMessage:
+		return r.receiveCall(message)
+	case *rpcResponseMessage:
+		return r.receiveResponse(message)
+	case *rpcCancelMessage:
+		return r.receiveCancel(message)
 	default:
+		return NewReceiverError("invalid message type, %d", rpc.Type())
 	}
-	return NewDispatcherError("invalid message type")
 }
 
 func (r *receiveHandler) receiveNotify(rpc *rpcNotifyMessage) error {

@@ -61,6 +61,19 @@ func TestMessageDecodeValid(t *testing.T) {
 	require.Equal(t, nil, c.Arg())
 }
 
+func TestMessageDecodeValidExtraParams(t *testing.T) {
+	v := []interface{}{MethodCall, 999, "abc.hello", new(interface{}), "foo", "bar"}
+
+	rpc, err := runMessageTest(t, v)
+	c, ok := rpc.(*rpcCallMessage)
+	require.True(t, ok)
+	require.Nil(t, err)
+	require.Equal(t, MethodCall, c.Type())
+	require.Equal(t, seqNumber(999), c.SeqNo())
+	require.Equal(t, "abc.hello", c.Name())
+	require.Equal(t, nil, c.Arg())
+}
+
 func TestMessageDecodeInvalidType(t *testing.T) {
 	v := []interface{}{"hello", seqNumber(0), "invalid", new(interface{})}
 

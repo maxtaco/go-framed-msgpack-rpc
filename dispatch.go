@@ -100,7 +100,7 @@ func (d *dispatch) handleCancel(c *call) error {
 			d.log.Info("error while dispatching cancellation: %+v", err.Error())
 		}
 	default:
-		// Don't block on sending the error
+		// Don't block on receiving the error from the Encode
 	}
 	return newCanceledError(c.method, c.seqid)
 }

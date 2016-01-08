@@ -28,6 +28,18 @@ func NewDispatcherError(d string, a ...interface{}) DispatcherError {
 	return DispatcherError{fmt.Sprintf(d, a...)}
 }
 
+type ReceiverError struct {
+	msg string
+}
+
+func (p ReceiverError) Error() string {
+	return "dispatcher error: " + p.msg
+}
+
+func NewReceiverError(d string, a ...interface{}) ReceiverError {
+	return ReceiverError{fmt.Sprintf(d, a...)}
+}
+
 type MethodNotFoundError struct {
 	p string
 	m string

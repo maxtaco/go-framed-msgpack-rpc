@@ -23,12 +23,6 @@ func (req *requestImpl) CancelFunc() context.CancelFunc {
 	return req.cancelFunc
 }
 
-func (r *requestImpl) LogInvocation(error)                           {}
-func (r *requestImpl) LogCompletion(interface{}, error)              {}
-func (r *requestImpl) Reply(encoder, interface{}, interface{}) error { return nil }
-func (r *requestImpl) Serve(encoder, *ServeHandlerDescription, WrapErrorFunc) {
-}
-
 type callRequest struct {
 	*rpcCallMessage
 	requestImpl
@@ -123,4 +117,8 @@ func (r *notifyRequest) Serve(transmitter encoder, handler *ServeHandlerDescript
 	_, err := handler.Handler(r.ctx, arg)
 	prof.Stop()
 	r.LogCompletion(nil, err)
+}
+
+func (r *notifyRequest) Reply(enc encoder, res interface{}, errArg interface{}) (err error) {
+	return nil
 }
