@@ -12,7 +12,7 @@ type task struct {
 }
 
 type receiver interface {
-	Receive(RPCData) error
+	Receive(rpcMessage) error
 	Close(err error) chan struct{}
 	AddCloseListener(chan<- error)
 }
@@ -78,22 +78,22 @@ func (r *receiveHandler) taskLoop() {
 	}
 }
 
-func (r *receiveHandler) Receive(rpc RPCData) error {
+func (r *receiveHandler) Receive(rpc rpcMessage) error {
 	switch rpc.Type() {
 	case MethodNotify:
-		if rpcData, ok := rpc.(*RPCNotifyData); ok {
+		if rpcData, ok := rpc.(*rpcNotifyMessage); ok {
 			return r.receiveNotify(rpcData)
 		}
 	case MethodCall:
-		if rpcData, ok := rpc.(*RPCCallData); ok {
+		if rpcData, ok := rpc.(*rpcCallMessage); ok {
 			return r.receiveCall(rpcData)
 		}
 	case MethodResponse:
-		if rpcData, ok := rpc.(*RPCResponseData); ok {
+		if rpcData, ok := rpc.(*rpcResponseMessage); ok {
 			return r.receiveResponse(rpcData)
 		}
 	case MethodCancel:
-		if rpcData, ok := rpc.(*RPCCancelData); ok {
+		if rpcData, ok := rpc.(*rpcCancelMessage); ok {
 			return r.receiveCancel(rpcData)
 		}
 	default:
@@ -101,17 +101,17 @@ func (r *receiveHandler) Receive(rpc RPCData) error {
 	return NewDispatcherError("invalid message type")
 }
 
-func (r *receiveHandler) receiveNotify(rpc *RPCNotifyData) error {
+func (r *receiveHandler) receiveNotify(rpc *rpcNotifyMessage) error {
 	req := newNotifyRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 
-func (r *receiveHandler) receiveCall(rpc *RPCCallData) error {
+func (r *receiveHandler) receiveCall(rpc *rpcCallMessage) error {
 	req := newCallRequest(rpc, r.log)
 	return r.handleReceiveDispatch(req)
 }
 
-func (r *receiveHandler) receiveCancel(rpc *RPCCancelData) error {
+func (r *receiveHandler) receiveCancel(rpc *rpcCancelMessage) error {
 	r.log.ServerCancelCall(rpc.SeqNo(), rpc.Name())
 	r.taskCancelCh <- rpc.SeqNo()
 	return nil
@@ -128,7 +128,7 @@ func (r *receiveHandler) handleReceiveDispatch(req request) error {
 	return nil
 }
 
-func (r *receiveHandler) receiveResponse(rpc *RPCResponseData) (err error) {
+func (r *receiveHandler) receiveResponse(rpc *rpcResponseMessage) (err error) {
 	callResponseCh := rpc.ResponseCh()
 
 	if callResponseCh == nil {

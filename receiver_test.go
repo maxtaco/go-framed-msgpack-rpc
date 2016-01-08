@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testReceive(t *testing.T, p *Protocol, rpc RPCData) error {
+func testReceive(t *testing.T, p *Protocol, rpc rpcMessage) error {
 	receiveOut := newBlockingMockCodec()
 
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
@@ -45,19 +45,19 @@ func testReceive(t *testing.T, p *Protocol, rpc RPCData) error {
 	return <-errCh
 }
 
-func makeCall(seq seqNumber, name string, arg interface{}) *RPCCallData {
-	return &RPCCallData{
+func makeCall(seq seqNumber, name string, arg interface{}) *rpcCallMessage {
+	return &rpcCallMessage{
 		seqno: seq,
 		name:  name,
 		arg:   arg,
 	}
 }
 
-func makeResponse(err error, res interface{}) *RPCResponseData {
-	return &RPCResponseData{
+func makeResponse(err error, res interface{}) *rpcResponseMessage {
+	return &rpcResponseMessage{
 		err: err,
 		c: &call{
-			resultCh: make(chan *RPCResponseData),
+			resultCh: make(chan *rpcResponseMessage),
 			res:      res,
 		},
 	}
@@ -82,7 +82,7 @@ func TestReceiveResponse(t *testing.T) {
 }
 
 func TestReceiveResponseNilCall(t *testing.T) {
-	c := &RPCResponseData{c: &call{}}
+	c := &rpcResponseMessage{c: &call{}}
 	done := runInBg(func() error {
 		err := testReceive(
 			t,

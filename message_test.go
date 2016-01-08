@@ -28,7 +28,7 @@ func createMessageTestProtocol() *protocolHandler {
 	return p
 }
 
-func runMessageTest(t *testing.T, v []interface{}) (RPCData, error) {
+func runMessageTest(t *testing.T, v []interface{}) (rpcMessage, error) {
 	var buf bytes.Buffer
 	mh := newCodecMsgpackHandle()
 	enc := codec.NewEncoder(&buf, mh)
@@ -44,7 +44,7 @@ func runMessageTest(t *testing.T, v []interface{}) (RPCData, error) {
 
 	p := createMessageTestProtocol()
 
-	r, err := DecodeRPC(len(v), dec, p, newCallContainer())
+	r, err := decodeRPC(len(v), dec, p, newCallContainer())
 	return r, err
 }
 
@@ -52,7 +52,7 @@ func TestMessageDecodeValid(t *testing.T) {
 	v := []interface{}{MethodCall, 999, "abc.hello", new(interface{})}
 
 	rpc, err := runMessageTest(t, v)
-	c, ok := rpc.(*RPCCallData)
+	c, ok := rpc.(*rpcCallMessage)
 	require.True(t, ok)
 	require.Nil(t, err)
 	require.Equal(t, MethodCall, c.Type())
