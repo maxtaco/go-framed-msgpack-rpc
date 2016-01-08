@@ -55,7 +55,8 @@ func TestMessageDecodeValid(t *testing.T) {
 }
 
 func TestMessageDecodeValidExtraParams(t *testing.T) {
-	v := []interface{}{MethodCall, 999, "abc.hello", new(interface{}), "foo", "bar"}
+	tags := CtxRpcTags{"hello": "world"}
+	v := []interface{}{MethodCall, 999, "abc.hello", new(interface{}), tags, "foo"}
 
 	rpc, err := runMessageTest(t, v)
 	require.Nil(t, err)
@@ -65,6 +66,9 @@ func TestMessageDecodeValidExtraParams(t *testing.T) {
 	require.Equal(t, seqNumber(999), c.SeqNo())
 	require.Equal(t, "abc.hello", c.Name())
 	require.Equal(t, nil, c.Arg())
+	resultTags, ok := RpcTagsFromContext(c.Context())
+	require.True(t, ok)
+	require.Equal(t, tags, resultTags)
 }
 
 func TestMessageDecodeValidResponse(t *testing.T) {
