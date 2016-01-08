@@ -15,30 +15,6 @@ type encoder interface {
 	Encode(interface{}) <-chan error
 }
 
-const poolSize int = 10
-
-type encoderPool chan *codec.Encoder
-
-func makeEncoderPool() encoderPool {
-	p := make(encoderPool, poolSize)
-
-	for i := 0; i < poolSize; i++ {
-		p <- codec.NewEncoderBytes(&[]byte{}, newCodecMsgpackHandle())
-	}
-
-	return p
-}
-
-func (p encoderPool) getEncoder(bytes *[]byte) *codec.Encoder {
-	enc := <-p
-	enc.ResetBytes(bytes)
-	return enc
-}
-
-func (p encoderPool) returnEncoder(enc *codec.Encoder) {
-	p <- enc
-}
-
 func newCodecMsgpackHandle() codec.Handle {
 	return &codec.MsgpackHandle{
 		WriteExt:    true,

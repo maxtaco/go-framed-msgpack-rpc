@@ -49,19 +49,3 @@ func TestCodec(t *testing.T) {
 	require.Equal(t, math.MaxInt32, targetInt, "expected codec to successfully decode int")
 	require.Equal(t, 0, len(buf.Bytes()), "expected buffer to be empty")
 }
-
-func BenchmarkEncoder(b *testing.B) {
-	var buf bytes.Buffer
-	p := newPacketHandler(&buf, nil, nil)
-	enc := newFramedMsgpackEncoder(&buf)
-
-	for n := 0; n < b.N; n++ {
-		enc.Encode([]interface{}{
-			0,
-			"hello",
-			"world",
-			new(interface{}),
-		})
-		p.loadNextFrame()
-	}
-}
