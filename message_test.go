@@ -1,67 +1,107 @@
 package rpc
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/context"
 )
 
-func TestValidMessage(t *testing.T) {
-	m := &message{remainingFields: 4}
-	m.decodeSlots = []interface{}{
-		&m.method,
-		&m.seqno,
-	}
-
-	md := newMockCodec(
-		"testMethod",
-		seqNumber(123),
-		456,
-		789,
-	)
-
-	err := decodeIntoMessage(md, m)
-	require.Nil(t, err, "An error occurred while decoding")
-	require.Equal(t, 2, m.remainingFields, "Decoded the wrong number of fields")
-
-	err = decodeToNull(md, m)
-	require.Nil(t, err, "An error occurred while decoding")
-	require.Equal(t, 0, m.remainingFields, "Expected message decoding to be finished")
-	require.Equal(t, "testMethod", m.method, "Wrong method name decoded")
-	require.Equal(t, seqNumber(123), m.seqno, "Wrong sequence number decoded")
-
-	err = decodeMessage(md, m, new(interface{}))
-	require.Error(t, err, "Expected error decoding past end")
+func createMessageTestProtocol() *protocolHandler {
+	p := newProtocolHandler(nil)
+	p.registerProtocol(Protocol{
+		Name: "abc",
+		Methods: map[string]ServeHandlerDescription{
+			"hello": {
+				MakeArg: func() interface{} {
+					return nil
+				},
+				Handler: func(context.Context, interface{}) (interface{}, error) {
+					return nil, nil
+				},
+				MethodType: MethodCall,
+			},
+		},
+	})
+	return p
 }
 
-func TestInvalidMessage(t *testing.T) {
-	m := &message{remainingFields: 4}
-	m.decodeSlots = []interface{}{
-		&m.method,
-		&m.seqno,
-	}
+func runMessageTest(t *testing.T, v []interface{}) (rpcMessage, error) {
+	var buf bytes.Buffer
+	enc := newFramedMsgpackEncoder(&buf)
+	pkt := newPacketHandler(&buf, createMessageTestProtocol(), newCallContainer())
 
-	md := newMockCodec(
-		"testMethod",
-	)
+	err := <-enc.Encode(v)
+	require.Nil(t, err, "expected encoding to succeed")
 
-	err := decodeIntoMessage(md, m)
-	require.Error(t, err, "Expected error decoding past end")
+	return pkt.NextFrame()
 }
 
-func TestMessageDecodeError(t *testing.T) {
-	m := &message{remainingFields: 2}
-	md := newMockCodec(
-		123,
-		"testError",
-	)
-	appErr, dispatchErr := decodeError(md, m, &mockErrorUnwrapper{})
-	require.Nil(t, appErr, "Expected app error to be nil")
-	require.Nil(t, dispatchErr, "Expected dispatch error to be nil")
-	appErr, dispatchErr = decodeError(md, m, nil)
-	require.Error(t, appErr, "Expected an app error")
-	require.Nil(t, dispatchErr, "Expected dispatch error to be nil")
-	appErr, dispatchErr = decodeError(md, m, &mockErrorUnwrapper{})
-	require.Nil(t, appErr, "Expected app error to be nil")
-	require.Error(t, dispatchErr, "Expected a dispatch error")
+func TestMessageDecodeValid(t *testing.T) {
+	v := []interface{}{MethodCall, 999, "abc.hello", new(interface{})}
+
+	rpc, err := runMessageTest(t, v)
+	c, ok := rpc.(*rpcCallMessage)
+	require.True(t, ok)
+	require.Nil(t, err)
+	require.Equal(t, MethodCall, c.Type())
+	require.Equal(t, seqNumber(999), c.SeqNo())
+	require.Equal(t, "abc.hello", c.Name())
+	require.Equal(t, nil, c.Arg())
+}
+
+func TestMessageDecodeValidExtraParams(t *testing.T) {
+	v := []interface{}{MethodCall, 999, "abc.hello", new(interface{}), "foo", "bar"}
+
+	rpc, err := runMessageTest(t, v)
+	c, ok := rpc.(*rpcCallMessage)
+	require.True(t, ok)
+	require.Nil(t, err)
+	require.Equal(t, MethodCall, c.Type())
+	require.Equal(t, seqNumber(999), c.SeqNo())
+	require.Equal(t, "abc.hello", c.Name())
+	require.Equal(t, nil, c.Arg())
+}
+
+func TestMessageDecodeInvalidType(t *testing.T) {
+	v := []interface{}{"hello", seqNumber(0), "invalid", new(interface{})}
+
+	_, err := runMessageTest(t, v)
+	require.EqualError(t, err, "[pos 1]: Unhandled single-byte unsigned integer value: Unrecognized descriptor byte: a5")
+}
+
+func TestMessageDecodeInvalidMethodType(t *testing.T) {
+	v := []interface{}{MethodType(999), seqNumber(0), "invalid", new(interface{})}
+
+	_, err := runMessageTest(t, v)
+	require.EqualError(t, err, "invalid RPC type")
+}
+
+func TestMessageDecodeInvalidProtocol(t *testing.T) {
+	v := []interface{}{MethodCall, seqNumber(0), "nonexistent.broken", new(interface{})}
+
+	_, err := runMessageTest(t, v)
+	require.EqualError(t, err, "protocol not found: nonexistent")
+}
+
+func TestMessageDecodeInvalidMethod(t *testing.T) {
+	v := []interface{}{MethodCall, seqNumber(0), "abc.invalid", new(interface{})}
+
+	_, err := runMessageTest(t, v)
+	require.EqualError(t, err, "method 'invalid' not found in protocol 'abc'")
+}
+
+func TestMessageDecodeWrongMessageLength(t *testing.T) {
+	v := []interface{}{MethodCall, seqNumber(0), "abc.invalid"}
+
+	_, err := runMessageTest(t, v)
+	require.EqualError(t, err, "wrong message length")
+}
+
+func TestMessageDecodeResponseNilCall(t *testing.T) {
+	v := []interface{}{MethodResponse, seqNumber(0), 32, "hi"}
+
+	_, err := runMessageTest(t, v)
+	require.EqualError(t, err, "Call not found for sequence number 0")
 }
