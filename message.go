@@ -98,7 +98,7 @@ func (r *rpcResponseMessage) DecodeMessage(l int, d decoder, _ *protocolHandler,
 
 	// Decode the result
 	if r.c.res == nil {
-		return NilResultError{seqNo}
+		return nil
 	}
 	return d.Decode(r.c.res)
 }
