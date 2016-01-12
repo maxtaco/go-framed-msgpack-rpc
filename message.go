@@ -77,6 +77,8 @@ func (r *rpcResponseMessage) DecodeMessage(l int, d decoder, _ *protocolHandler,
 	var responseErr interface{}
 	if r.c.errorUnwrapper != nil {
 		responseErr = r.c.errorUnwrapper.MakeArg()
+	} else {
+		responseErr = new(string)
 	}
 	if err := d.Decode(responseErr); err != nil {
 		return err
@@ -89,12 +91,14 @@ func (r *rpcResponseMessage) DecodeMessage(l int, d decoder, _ *protocolHandler,
 		if dispatchErr != nil {
 			return dispatchErr
 		}
-	} else if responseErr != nil {
+	} else {
 		errAsString, ok := responseErr.(*string)
 		if !ok {
 			return fmt.Errorf("unable to convert error to string: %v", responseErr)
 		}
-		r.err = errors.New(*errAsString)
+		if *errAsString != "" {
+			r.err = errors.New(*errAsString)
+		}
 	}
 
 	// Decode the result
