@@ -191,9 +191,9 @@ func (r rpcCancelMessage) Name() string {
 }
 
 func decodeRPC(l int, d decoder, p *protocolHandler, cc *callContainer) (rpcMessage, error) {
-	var typ MethodType
+	typ := MethodInvalid
 	if err := d.Decode(&typ); err != nil {
-		return nil, err
+		return nil, newRPCDecodeError(typ, l, err)
 	}
 
 	var data rpcMessage
@@ -207,14 +207,16 @@ func decodeRPC(l int, d decoder, p *protocolHandler, cc *callContainer) (rpcMess
 	case MethodCancel:
 		data = &rpcCancelMessage{}
 	default:
-		return nil, errors.New("invalid RPC type")
+		return nil, newRPCDecodeError(typ, l, errors.New("invalid RPC type"))
 	}
-	l--
-	if l < data.MinLength() {
-		return nil, errors.New("wrong message length")
+
+	dataLength := l - 1
+	if dataLength < data.MinLength() {
+		return nil, newRPCDecodeError(typ, l, errors.New("wrong message length"))
 	}
-	if err := data.DecodeMessage(l, d, p, cc); err != nil {
-		return nil, err
+
+	if err := data.DecodeMessage(dataLength, d, p, cc); err != nil {
+		return nil, newRPCDecodeError(typ, l, err)
 	}
 	return data, nil
 }

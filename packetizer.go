@@ -16,7 +16,7 @@ type packetizer interface {
 type packetHandler struct {
 	dec          decoder
 	reader       io.Reader
-	frameDecoder *codec.Decoder
+	frameDecoder *decoderWrapper
 	protocols    *protocolHandler
 	calls        *callContainer
 }
@@ -25,7 +25,7 @@ func newPacketHandler(reader io.Reader, protocols *protocolHandler, calls *callC
 	return &packetHandler{
 		reader:       reader,
 		dec:          codec.NewDecoder(reader, newCodecMsgpackHandle()),
-		frameDecoder: codec.NewDecoderBytes([]byte{}, newCodecMsgpackHandle()),
+		frameDecoder: newDecoderWrapper(),
 		protocols:    protocols,
 		calls:        calls,
 	}
