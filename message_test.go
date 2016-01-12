@@ -30,7 +30,10 @@ func createMessageTestProtocol() *protocolHandler {
 func runMessageTest(t *testing.T, v []interface{}) (rpcMessage, error) {
 	var buf bytes.Buffer
 	enc := newFramedMsgpackEncoder(&buf)
-	pkt := newPacketHandler(&buf, createMessageTestProtocol(), newCallContainer())
+	cc := newCallContainer()
+	c := cc.NewCall(context.Background(), "foo.bar", new(interface{}), new(string), nil)
+	cc.AddCall(c)
+	pkt := newPacketHandler(&buf, createMessageTestProtocol(), cc)
 
 	err := <-enc.Encode(v)
 	require.Nil(t, err, "expected encoding to succeed")
@@ -42,9 +45,9 @@ func TestMessageDecodeValid(t *testing.T) {
 	v := []interface{}{MethodCall, 999, "abc.hello", new(interface{})}
 
 	rpc, err := runMessageTest(t, v)
+	require.Nil(t, err)
 	c, ok := rpc.(*rpcCallMessage)
 	require.True(t, ok)
-	require.Nil(t, err)
 	require.Equal(t, MethodCall, c.Type())
 	require.Equal(t, seqNumber(999), c.SeqNo())
 	require.Equal(t, "abc.hello", c.Name())
@@ -55,13 +58,28 @@ func TestMessageDecodeValidExtraParams(t *testing.T) {
 	v := []interface{}{MethodCall, 999, "abc.hello", new(interface{}), "foo", "bar"}
 
 	rpc, err := runMessageTest(t, v)
+	require.Nil(t, err)
 	c, ok := rpc.(*rpcCallMessage)
 	require.True(t, ok)
-	require.Nil(t, err)
 	require.Equal(t, MethodCall, c.Type())
 	require.Equal(t, seqNumber(999), c.SeqNo())
 	require.Equal(t, "abc.hello", c.Name())
 	require.Equal(t, nil, c.Arg())
+}
+
+func TestMessageDecodeValidResponse(t *testing.T) {
+	v := []interface{}{MethodResponse, seqNumber(0), nil, "hi"}
+
+	rpc, err := runMessageTest(t, v)
+	require.Nil(t, err)
+	r, ok := rpc.(*rpcResponseMessage)
+	require.True(t, ok)
+	require.Equal(t, MethodResponse, r.Type())
+	require.Equal(t, seqNumber(0), r.SeqNo())
+	resAsString, ok := r.Res().(*string)
+	require.True(t, ok)
+	require.Equal(t, "hi", *resAsString)
+	require.True(t, ok)
 }
 
 func TestMessageDecodeInvalidType(t *testing.T) {
@@ -100,8 +118,8 @@ func TestMessageDecodeWrongMessageLength(t *testing.T) {
 }
 
 func TestMessageDecodeResponseNilCall(t *testing.T) {
-	v := []interface{}{MethodResponse, seqNumber(0), 32, "hi"}
+	v := []interface{}{MethodResponse, seqNumber(-1), 32, "hi"}
 
 	_, err := runMessageTest(t, v)
-	require.EqualError(t, err, "RPC error: type 1, length 4, error: Call not found for sequence number 0")
+	require.EqualError(t, err, "RPC error: type 1, length 4, error: Call not found for sequence number -1")
 }
