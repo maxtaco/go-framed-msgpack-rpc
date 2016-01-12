@@ -15,10 +15,11 @@ type ServeHandlerDescription struct {
 type MethodType int
 
 const (
+	MethodInvalid  MethodType = -1
 	MethodCall     MethodType = 0
-	MethodResponse            = 1
-	MethodNotify              = 2
-	MethodCancel              = 3
+	MethodResponse MethodType = 1
+	MethodNotify   MethodType = 2
+	MethodCancel   MethodType = 3
 )
 
 type ErrorUnwrapper interface {

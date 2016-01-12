@@ -15,6 +15,30 @@ type encoder interface {
 	Encode(interface{}) <-chan error
 }
 
+type decoderWrapper struct {
+	*codec.Decoder
+	fieldNumber int
+}
+
+func newDecoderWrapper() *decoderWrapper {
+	return &decoderWrapper{
+		Decoder:     codec.NewDecoderBytes([]byte{}, newCodecMsgpackHandle()),
+		fieldNumber: 0,
+	}
+}
+
+func (dw *decoderWrapper) Decode(i interface{}) error {
+	defer func() {
+		dw.fieldNumber++
+	}()
+
+	err := dw.Decoder.Decode(i)
+	if err != nil {
+		return newRPCMessageFieldDecodeError(dw.fieldNumber, err)
+	}
+	return nil
+}
+
 func newCodecMsgpackHandle() codec.Handle {
 	return &codec.MsgpackHandle{
 		WriteExt:    true,

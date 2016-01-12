@@ -108,3 +108,25 @@ type NilResultError struct {
 func (c NilResultError) Error() string {
 	return fmt.Sprintf("Nil result supplied for sequence number %d", c.seqno)
 }
+
+type RPCDecodeError struct {
+	typ MethodType
+	len int
+	err error
+}
+
+func (r RPCDecodeError) Error() string {
+	return fmt.Sprintf("RPC error: type %d, length %d, error: %v", r.typ, r.len, r.err)
+}
+
+func newRPCDecodeError(t MethodType, l int, e error) error {
+	return RPCDecodeError{
+		typ: t,
+		len: l,
+		err: e,
+	}
+}
+
+func newRPCMessageFieldDecodeError(i int, err error) error {
+	return fmt.Errorf("error decoding message field at position %d, error: %v", i, err)
+}

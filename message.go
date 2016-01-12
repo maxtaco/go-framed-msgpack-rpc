@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"errors"
+	"fmt"
 )
 
 type rpcMessage interface {
@@ -76,6 +77,8 @@ func (r *rpcResponseMessage) DecodeMessage(l int, d decoder, _ *protocolHandler,
 	var responseErr interface{}
 	if r.c.errorUnwrapper != nil {
 		responseErr = r.c.errorUnwrapper.MakeArg()
+	} else {
+		responseErr = new(string)
 	}
 	if err := d.Decode(responseErr); err != nil {
 		return err
@@ -88,17 +91,19 @@ func (r *rpcResponseMessage) DecodeMessage(l int, d decoder, _ *protocolHandler,
 		if dispatchErr != nil {
 			return dispatchErr
 		}
-	} else if responseErr != nil {
+	} else {
 		errAsString, ok := responseErr.(*string)
 		if !ok {
-			return errors.New("unable to convert error to string")
+			return fmt.Errorf("unable to convert error to string: %v", responseErr)
 		}
-		r.err = errors.New(*errAsString)
+		if *errAsString != "" {
+			r.err = errors.New(*errAsString)
+		}
 	}
 
 	// Decode the result
 	if r.c.res == nil {
-		return NilResultError{seqNo}
+		return nil
 	}
 	return d.Decode(r.c.res)
 }
@@ -191,9 +196,9 @@ func (r rpcCancelMessage) Name() string {
 }
 
 func decodeRPC(l int, d decoder, p *protocolHandler, cc *callContainer) (rpcMessage, error) {
-	var typ MethodType
+	typ := MethodInvalid
 	if err := d.Decode(&typ); err != nil {
-		return nil, err
+		return nil, newRPCDecodeError(typ, l, err)
 	}
 
 	var data rpcMessage
@@ -207,14 +212,16 @@ func decodeRPC(l int, d decoder, p *protocolHandler, cc *callContainer) (rpcMess
 	case MethodCancel:
 		data = &rpcCancelMessage{}
 	default:
-		return nil, errors.New("invalid RPC type")
+		return nil, newRPCDecodeError(typ, l, errors.New("invalid RPC type"))
 	}
-	l--
-	if l < data.MinLength() {
-		return nil, errors.New("wrong message length")
+
+	dataLength := l - 1
+	if dataLength < data.MinLength() {
+		return nil, newRPCDecodeError(typ, l, errors.New("wrong message length"))
 	}
-	if err := data.DecodeMessage(l, d, p, cc); err != nil {
-		return nil, err
+
+	if err := data.DecodeMessage(dataLength, d, p, cc); err != nil {
+		return nil, newRPCDecodeError(typ, l, err)
 	}
 	return data, nil
 }
