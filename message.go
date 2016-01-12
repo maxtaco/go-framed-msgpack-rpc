@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"errors"
+	"fmt"
 )
 
 type rpcMessage interface {
@@ -91,7 +92,7 @@ func (r *rpcResponseMessage) DecodeMessage(l int, d decoder, _ *protocolHandler,
 	} else if responseErr != nil {
 		errAsString, ok := responseErr.(*string)
 		if !ok {
-			return errors.New("unable to convert error to string")
+			return fmt.Errorf("unable to convert error to string: %v", responseErr)
 		}
 		r.err = errors.New(*errAsString)
 	}
