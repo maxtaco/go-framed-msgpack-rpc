@@ -63,7 +63,7 @@ func newFramedMsgpackEncoder(writer io.Writer) *framedMsgpackEncoder {
 	e := &framedMsgpackEncoder{
 		handle:   newCodecMsgpackHandle(),
 		writer:   writer,
-		writeCh:  make(chan writeBundle),
+		writeCh:  make(chan writeBundle, 128),
 		doneCh:   make(chan struct{}),
 		closedCh: make(chan struct{}),
 	}
