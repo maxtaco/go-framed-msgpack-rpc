@@ -89,7 +89,7 @@ func (d *dispatch) Notify(ctx context.Context, name string, arg interface{}) err
 		return io.EOF
 	case <-ctx.Done():
 		d.log.ClientCancel(-1, name, nil)
-		return newCanceledError(name, -1)
+		return ctx.Err()
 	}
 }
 
@@ -108,5 +108,5 @@ func (d *dispatch) handleCancel(c *call) error {
 	default:
 		// Don't block on receiving the error from the Encode
 	}
-	return newCanceledError(c.method, c.seqid)
+	return c.ctx.Err()
 }

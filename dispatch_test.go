@@ -69,8 +69,7 @@ func TestDispatchCanceledBeforeResult(t *testing.T) {
 	cancel()
 
 	err := <-done
-	_, canceled := err.(CanceledError)
-	require.True(t, canceled, "Expected rpc.CanceledError")
+	require.EqualError(t, err, context.Canceled.Error())
 
 	require.Nil(t, calls.RetrieveCall(0), "Expected call to be removed from the container")
 

@@ -51,7 +51,7 @@ func (r *callRequest) LogCompletion(res interface{}, err error) {
 func (r *callRequest) Reply(enc encoder, res interface{}, errArg interface{}) (err error) {
 	select {
 	case <-r.ctx.Done():
-		err = newCanceledError(r.Name(), r.SeqNo())
+		err = r.ctx.Err()
 		r.log.Info(err.Error())
 	default:
 		v := []interface{}{

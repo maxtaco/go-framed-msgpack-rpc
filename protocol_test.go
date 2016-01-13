@@ -103,7 +103,7 @@ func TestLongCallCancel(t *testing.T) {
 	})
 	cancel()
 	<-wait
-	require.EqualError(t, err, "call canceled: method test.1.testp.LongCall, seqid 0", "call should be canceled")
+	require.EqualError(t, err, context.Canceled.Error())
 	require.Equal(t, 0, longResult, "call should be canceled")
 
 	longResult, err = cli.LongCallResult(context.Background())
