@@ -40,6 +40,12 @@ func (d *dispatch) Call(ctx context.Context, name string, arg interface{}, res i
 	profiler := d.log.StartProfiler("call %s", name)
 	defer profiler.Stop()
 
+	select {
+	case <-d.stopCh:
+		return io.EOF
+	default:
+	}
+
 	c := d.calls.NewCall(ctx, name, arg, res, u)
 
 	// Have to add call before encoding otherwise we'll race the response
