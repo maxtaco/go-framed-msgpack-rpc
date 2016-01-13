@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"bytes"
 	"io"
 	"testing"
 
@@ -115,4 +116,27 @@ func TestDispatchCallAfterClose(t *testing.T) {
 	})
 	err = <-done
 	require.Equal(t, io.EOF, err)
+}
+
+func TestDispatchCancel(t *testing.T) {
+	buf := blockingBuffer{
+		Buffer: &bytes.Buffer{},
+		ch:     make(chan struct{}),
+	}
+	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
+	enc := newFramedMsgpackEncoder(&buf)
+	cc := newCallContainer()
+	d := newDispatch(enc, cc, logFactory.NewLog(nil))
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+
+	ch := make(chan error)
+	go func() {
+		err := d.Call(ctx1, "abc.hello", nil, new(interface{}), nil)
+		ch <- err
+	}()
+
+	cancel1()
+	err := <-ch
+	require.Equal(t, err, context.Canceled)
 }
