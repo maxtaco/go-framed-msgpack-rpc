@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
@@ -35,6 +39,14 @@ func prepClient(t *testing.T) (TestClient, net.Conn) {
 }
 
 func prepTest(t *testing.T) (TestClient, chan error, net.Conn) {
+	sigs := make(chan os.Signal, 1)
+
+	signal.Notify(sigs, syscall.SIGINT)
+	go func() {
+		<-sigs
+		panic("interrupt")
+	}()
+
 	listener := make(chan error)
 	prepServer(listener)
 	cli, conn := prepClient(t)
@@ -97,16 +109,26 @@ func TestLongCallCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var longResult int
 	var err error
-	wait := runInBg(func() error {
-		longResult, err = cli.LongCall(ctx)
-		return err
-	})
-	cancel()
-	<-wait
-	require.EqualError(t, err, context.Canceled.Error())
-	require.Equal(t, 0, longResult, "call should be canceled")
 
-	longResult, err = cli.LongCallResult(context.Background())
-	require.Nil(t, err, "call should have succeeded")
-	require.Equal(t, -1, longResult, "canceled call should have set the result to canceled")
+	type result struct {
+		res int
+		err error
+	}
+	resultCh := make(chan result)
+	runInBg(func() error {
+		longResult, err = cli.LongCall(ctx)
+		resultCh <- result{longResult, err}
+		longResult, err = cli.LongCallResult(context.Background())
+		resultCh <- result{longResult, err}
+		return nil
+	})
+	time.Sleep(1 * time.Millisecond)
+	cancel()
+	res := <-resultCh
+	require.EqualError(t, res.err, context.Canceled.Error())
+	require.Equal(t, 0, res.res, "call should be canceled")
+
+	res = <-resultCh
+	require.Nil(t, res.err, "call should have succeeded")
+	require.Equal(t, -1, res.res, "canceled call should have set the result to canceled")
 }

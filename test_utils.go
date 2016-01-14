@@ -80,7 +80,7 @@ func (a *testProtocol) DivMod(args *DivModArgs) (ret *DivModRes, err error) {
 
 func (a *testProtocol) UpdateConstants(args *Constants) error {
 	a.constants = *args
-	a.notifyCh <- struct{}{}
+	close(a.notifyCh)
 	return nil
 }
 
@@ -91,7 +91,7 @@ func (a *testProtocol) GetConstants() (*Constants, error) {
 
 func (a *testProtocol) LongCall(ctx context.Context) (int, error) {
 	defer func() {
-		a.notifyCh <- struct{}{}
+		close(a.notifyCh)
 	}()
 	a.longCallResult = 0
 	for i := 0; i < 100; i++ {
@@ -289,7 +289,7 @@ func (md *mockCodec) ReadByte() (b byte, err error) {
 	return b, err
 }
 
-func (md *mockCodec) Encode(i interface{}) <-chan error {
+func (md *mockCodec) Encode(ctx context.Context, i interface{}) <-chan error {
 	return md.encode(i, nil)
 }
 
@@ -349,7 +349,7 @@ func (md *blockingMockCodec) Decode(i interface{}) error {
 	return md.decode(i)
 }
 
-func (md *blockingMockCodec) Encode(i interface{}) <-chan error {
+func (md *blockingMockCodec) Encode(ctx context.Context, i interface{}) <-chan error {
 	return md.encode(i, md.ch)
 }
 

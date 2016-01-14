@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/ugorji/go/codec"
+	"golang.org/x/net/context"
 )
 
 type decoder interface {
@@ -12,7 +13,7 @@ type decoder interface {
 
 // TODO rename this interface to EncodeAndSend
 type encoder interface {
-	Encode(interface{}) <-chan error
+	Encode(context.Context, interface{}) <-chan error
 }
 
 type decoderWrapper struct {
@@ -63,7 +64,7 @@ func newFramedMsgpackEncoder(writer io.Writer) *framedMsgpackEncoder {
 	e := &framedMsgpackEncoder{
 		handle:   newCodecMsgpackHandle(),
 		writer:   writer,
-		writeCh:  make(chan writeBundle, 128),
+		writeCh:  make(chan writeBundle),
 		doneCh:   make(chan struct{}),
 		closedCh: make(chan struct{}),
 	}
@@ -90,7 +91,7 @@ func (e *framedMsgpackEncoder) encodeFrame(i interface{}) ([]byte, error) {
 	return append(length, content...), nil
 }
 
-func (e *framedMsgpackEncoder) Encode(i interface{}) <-chan error {
+func (e *framedMsgpackEncoder) Encode(ctx context.Context, i interface{}) <-chan error {
 	bytes, err := e.encodeFrame(i)
 	ch := make(chan error, 1)
 	if err != nil {
@@ -100,6 +101,8 @@ func (e *framedMsgpackEncoder) Encode(i interface{}) <-chan error {
 	select {
 	case <-e.doneCh:
 		ch <- io.EOF
+	case <-ctx.Done():
+		ch <- ctx.Err()
 	case e.writeCh <- writeBundle{bytes, ch}:
 	}
 	return ch

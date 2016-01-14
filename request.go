@@ -60,11 +60,14 @@ func (r *callRequest) Reply(enc encoder, res interface{}, errArg interface{}) (e
 			errArg,
 			res,
 		}
-		errCh := enc.Encode(v)
-		// TODO investigate hypothetical server-side hang here
-		err = <-errCh
-		if err != nil {
-			r.log.Warning("Reply error for %d: %s", r.SeqNo(), err.Error())
+		errCh := enc.Encode(context.Background(), v)
+		select {
+		case err := <-errCh:
+			if err != nil {
+				r.log.Warning("Reply error for %d: %s", r.SeqNo(), err.Error())
+			}
+		default:
+			// Don't wait for a reply
 		}
 	}
 	return err
