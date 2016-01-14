@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
-	"os/signal"
-	"syscall"
 	"testing"
 	"time"
 
@@ -39,14 +36,6 @@ func prepClient(t *testing.T) (TestClient, net.Conn) {
 }
 
 func prepTest(t *testing.T) (TestClient, chan error, net.Conn) {
-	sigs := make(chan os.Signal, 1)
-
-	signal.Notify(sigs, syscall.SIGINT)
-	go func() {
-		<-sigs
-		panic("interrupt")
-	}()
-
 	listener := make(chan error)
 	prepServer(listener)
 	cli, conn := prepClient(t)

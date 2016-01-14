@@ -104,6 +104,16 @@ func (e *framedMsgpackEncoder) Encode(ctx context.Context, i interface{}) <-chan
 	case <-ctx.Done():
 		ch <- ctx.Err()
 	case e.writeCh <- writeBundle{bytes, ch}:
+	default:
+		go func() {
+			select {
+			case <-e.doneCh:
+				ch <- io.EOF
+			case <-ctx.Done():
+				ch <- ctx.Err()
+			case e.writeCh <- writeBundle{bytes, ch}:
+			}
+		}()
 	}
 	return ch
 }

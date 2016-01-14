@@ -60,14 +60,14 @@ func (r *callRequest) Reply(enc encoder, res interface{}, errArg interface{}) (e
 			errArg,
 			res,
 		}
-		errCh := enc.Encode(context.Background(), v)
+		errCh := enc.Encode(r.ctx, v)
 		select {
 		case err := <-errCh:
 			if err != nil {
 				r.log.Warning("Reply error for %d: %s", r.SeqNo(), err.Error())
 			}
-		default:
-			// Don't wait for a reply
+		case <-r.ctx.Done():
+			r.log.Info("Call canceled after reply sent. Seq: %d", r.SeqNo())
 		}
 	}
 	return err
