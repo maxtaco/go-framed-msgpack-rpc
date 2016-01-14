@@ -1,40 +1,30 @@
 package rpc
 
 import (
-	"errors"
 	"io"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func testReceive(t *testing.T, p *Protocol, rpc rpcMessage) error {
-	receiveOut := newBlockingMockCodec()
+	conn1, conn2 := net.Pipe()
+	receiveOut := newFramedMsgpackEncoder(conn1)
 
-	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
-	protHandler := newProtocolHandler(nil)
-	r := newReceiveHandler(receiveOut, protHandler, logFactory.NewLog(nil))
+	protHandler := createMessageTestProtocol()
 	if p != nil {
 		protHandler.registerProtocol(*p)
 	}
+	pkt := newPacketHandler(conn2, protHandler, newCallContainer())
+	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
+
+	r := newReceiveHandler(receiveOut, protHandler, logFactory.NewLog(nil))
 
 	errCh := make(chan error)
 	go func() {
-		var m MethodType
-		var seqno seqNumber
-		var respErrStr string
-		var res interface{}
-		decErr := receiveOut.Decode(&m)
-		require.Nil(t, decErr, "Expected decode to succeed")
-		require.Equal(t, MethodResponse, m, "Expected a response")
-		decErr = receiveOut.Decode(&seqno)
-		require.Nil(t, decErr, "Expected decode to succeed")
-		require.Equal(t, seqNumber(0), seqno, "Expected sequence number to be 0")
-		decErr = receiveOut.Decode(&respErrStr)
-		require.Nil(t, decErr, "Expected decode to succeed")
-		decErr = receiveOut.Decode(&res)
-		require.Nil(t, decErr, "Expected decode to succeed")
-		errCh <- errors.New(respErrStr)
+		_, err := pkt.NextFrame()
+		errCh <- err
 	}()
 
 	err := r.Receive(rpc)
@@ -98,8 +88,10 @@ func TestReceiveResponseNilCall(t *testing.T) {
 
 func TestCloseReceiver(t *testing.T) {
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
+	conn1, _ := net.Pipe()
+	receiveOut := newFramedMsgpackEncoder(conn1)
 	r := newReceiveHandler(
-		newBlockingMockCodec(),
+		receiveOut,
 		newProtocolHandler(nil),
 		logFactory.NewLog(nil),
 	)

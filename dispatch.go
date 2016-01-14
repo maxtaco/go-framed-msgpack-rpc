@@ -101,7 +101,7 @@ func (d *dispatch) Close() {
 
 func (d *dispatch) handleCancel(c *call) error {
 	d.log.ClientCancel(c.seqid, c.method, nil)
-	errCh := d.writer.EncodeAndWrite(context.Background(), []interface{}{MethodCancel, c.seqid, c.method})
+	errCh := d.writer.EncodeAndWriteAsync(context.Background(), []interface{}{MethodCancel, c.seqid, c.method})
 	select {
 	case err := <-errCh:
 		if err != nil {

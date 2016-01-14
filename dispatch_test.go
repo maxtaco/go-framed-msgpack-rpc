@@ -9,29 +9,22 @@ import (
 	"golang.org/x/net/context"
 )
 
-func decodeToNull(dec decoder, l int) error {
-	for i := 0; i < l; i++ {
-		if err := dec.Decode(new(interface{})); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func dispatchTestCallWithContext(t *testing.T, ctx context.Context) (dispatcher, *callContainer, chan error) {
-	dispatchOut := newBlockingMockCodec()
+	conn1, conn2 := net.Pipe()
+	dispatchOut := newFramedMsgpackEncoder(conn1)
+	calls := newCallContainer()
+	pkt := newPacketHandler(conn2, createMessageTestProtocol(), calls)
 
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
-	calls := newCallContainer()
 	d := newDispatch(dispatchOut, calls, logFactory.NewLog(nil))
 
 	done := runInBg(func() error {
-		return d.Call(ctx, "whatever", new(interface{}), new(interface{}), nil)
+		return d.Call(ctx, "abc.hello", new(interface{}), new(interface{}), nil)
 	})
 
 	// Necessary to ensure the call is far enough along to
 	// be ready to respond
-	decoderErr := decodeToNull(dispatchOut, 4)
+	_, decoderErr := pkt.NextFrame()
 	require.Nil(t, decoderErr, "Expected no error")
 	return d, calls, done
 }
