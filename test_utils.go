@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -361,19 +360,4 @@ func (eu *mockErrorUnwrapper) MakeArg() interface{} {
 
 func (eu *mockErrorUnwrapper) UnwrapError(i interface{}) (appErr error, dispatchErr error) {
 	return nil, nil
-}
-
-type blockingBuffer struct {
-	*bytes.Buffer
-	ch chan struct{}
-}
-
-func (buf *blockingBuffer) Write(p []byte) (int, error) {
-	<-buf.ch
-	return buf.Buffer.Write(p)
-}
-
-func (buf *blockingBuffer) Close() error {
-	close(buf.ch)
-	return nil
 }

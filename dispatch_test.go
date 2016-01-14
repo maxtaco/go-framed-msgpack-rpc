@@ -1,8 +1,8 @@
 package rpc
 
 import (
-	"bytes"
 	"io"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -119,12 +119,9 @@ func TestDispatchCallAfterClose(t *testing.T) {
 }
 
 func TestDispatchCancel(t *testing.T) {
-	buf := blockingBuffer{
-		Buffer: &bytes.Buffer{},
-		ch:     make(chan struct{}),
-	}
+	dispatchConn, _ := net.Pipe()
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
-	enc := newFramedMsgpackEncoder(&buf)
+	enc := newFramedMsgpackEncoder(dispatchConn)
 	cc := newCallContainer()
 	d := newDispatch(enc, cc, logFactory.NewLog(nil))
 
