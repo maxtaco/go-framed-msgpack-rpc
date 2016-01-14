@@ -288,7 +288,7 @@ func (md *mockCodec) ReadByte() (b byte, err error) {
 	return b, err
 }
 
-func (md *mockCodec) Encode(ctx context.Context, i interface{}) <-chan error {
+func (md *mockCodec) EncodeAndWrite(ctx context.Context, i interface{}) <-chan error {
 	return md.encode(i, nil)
 }
 
@@ -348,7 +348,7 @@ func (md *blockingMockCodec) Decode(i interface{}) error {
 	return md.decode(i)
 }
 
-func (md *blockingMockCodec) Encode(ctx context.Context, i interface{}) <-chan error {
+func (md *blockingMockCodec) EncodeAndWrite(ctx context.Context, i interface{}) <-chan error {
 	return md.encode(i, md.ch)
 }
 

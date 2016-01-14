@@ -60,7 +60,7 @@ func (r *callRequest) Reply(enc encoder, res interface{}, errArg interface{}) (e
 			errArg,
 			res,
 		}
-		errCh := enc.Encode(r.ctx, v)
+		errCh := enc.EncodeAndWrite(r.ctx, v)
 		select {
 		case err := <-errCh:
 			if err != nil {
