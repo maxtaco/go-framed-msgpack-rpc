@@ -40,12 +40,6 @@ func (d *dispatch) Call(ctx context.Context, name string, arg interface{}, res i
 	profiler := d.log.StartProfiler("call %s", name)
 	defer profiler.Stop()
 
-	select {
-	case <-d.stopCh:
-		return io.EOF
-	default:
-	}
-
 	c := d.calls.NewCall(ctx, name, arg, res, u)
 
 	// Have to add call before encoding otherwise we'll race the response
@@ -101,7 +95,7 @@ func (d *dispatch) Close() {
 
 func (d *dispatch) handleCancel(c *call) error {
 	d.log.ClientCancel(c.seqid, c.method, nil)
-	errCh := d.writer.EncodeAndWriteAsync(context.Background(), []interface{}{MethodCancel, c.seqid, c.method})
+	errCh := d.writer.EncodeAndWriteAsync([]interface{}{MethodCancel, c.seqid, c.method})
 	select {
 	case err := <-errCh:
 		if err != nil {

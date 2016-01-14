@@ -14,7 +14,7 @@ type decoder interface {
 // TODO rename this interface to EncodeAndSend
 type encoder interface {
 	EncodeAndWrite(context.Context, interface{}) <-chan error
-	EncodeAndWriteAsync(context.Context, interface{}) <-chan error
+	EncodeAndWriteAsync(interface{}) <-chan error
 }
 
 type decoderWrapper struct {
@@ -109,7 +109,7 @@ func (e *framedMsgpackEncoder) EncodeAndWrite(ctx context.Context, i interface{}
 	return ch
 }
 
-func (e *framedMsgpackEncoder) EncodeAndWriteAsync(ctx context.Context, i interface{}) <-chan error {
+func (e *framedMsgpackEncoder) EncodeAndWriteAsync(i interface{}) <-chan error {
 	bytes, err := e.encodeFrame(i)
 	ch := make(chan error, 1)
 	if err != nil {
@@ -119,16 +119,12 @@ func (e *framedMsgpackEncoder) EncodeAndWriteAsync(ctx context.Context, i interf
 	select {
 	case <-e.doneCh:
 		ch <- io.EOF
-	case <-ctx.Done():
-		ch <- ctx.Err()
 	case e.writeCh <- writeBundle{bytes, ch}:
 	default:
 		go func() {
 			select {
 			case <-e.doneCh:
 				ch <- io.EOF
-			case <-ctx.Done():
-				ch <- ctx.Err()
 			case e.writeCh <- writeBundle{bytes, ch}:
 			}
 		}()

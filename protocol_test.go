@@ -111,7 +111,7 @@ func TestLongCallCancel(t *testing.T) {
 		resultCh <- result{longResult, err}
 		return nil
 	})
-	time.Sleep(1 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 	cancel()
 	res := <-resultCh
 	require.EqualError(t, res.err, context.Canceled.Error())
