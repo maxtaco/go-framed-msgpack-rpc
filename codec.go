@@ -11,7 +11,6 @@ type decoder interface {
 	Decode(interface{}) error
 }
 
-// TODO rename this interface to EncodeAndSend
 type encoder interface {
 	EncodeAndWrite(context.Context, interface{}) <-chan error
 	EncodeAndWriteAsync(interface{}) <-chan error

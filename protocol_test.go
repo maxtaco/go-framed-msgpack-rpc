@@ -111,6 +111,7 @@ func TestLongCallCancel(t *testing.T) {
 		resultCh <- result{longResult, err}
 		return nil
 	})
+	// TODO figure out a way to avoid this sleep
 	time.Sleep(time.Millisecond)
 	cancel()
 	res := <-resultCh
