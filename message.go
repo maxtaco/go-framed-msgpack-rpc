@@ -70,7 +70,7 @@ func (r *rpcResponseMessage) DecodeMessage(l int, d decoder, _ *protocolHandler,
 	// Attempt to retrieve the call
 	r.c = cc.RetrieveCall(seqNo)
 	if r.c == nil {
-		return CallNotFoundError{seqNo}
+		return newCallNotFoundError(seqNo)
 	}
 
 	// Decode the error
@@ -195,7 +195,7 @@ func (r rpcCancelMessage) Name() string {
 	return r.name
 }
 
-func decodeRPC(l int, d decoder, p *protocolHandler, cc *callContainer) (rpcMessage, error) {
+func decodeRPC(l int, d decoder, p *protocolHandler, cc *callContainer) (rpcMessage, RecoverableError) {
 	typ := MethodInvalid
 	if err := d.Decode(&typ); err != nil {
 		return nil, newRPCDecodeError(typ, l, err)

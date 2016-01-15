@@ -9,7 +9,7 @@ import (
 )
 
 type packetizer interface {
-	NextFrame() (rpcMessage, error)
+	NextFrame() (rpcMessage, RecoverableError)
 }
 
 type packetHandler struct {
@@ -30,13 +30,13 @@ func newPacketHandler(reader io.Reader, protocols *protocolHandler, calls *callC
 	}
 }
 
-func (p *packetHandler) NextFrame() (rpcMessage, error) {
+func (p *packetHandler) NextFrame() (rpcMessage, RecoverableError) {
 	bytes, err := p.loadNextFrame()
 	if err != nil {
-		return nil, err
+		return nil, newRPCErrorWrapper(err)
 	}
 	if len(bytes) < 1 {
-		return nil, fmt.Errorf("invalid frame size: %d", len(bytes))
+		return nil, NewPacketizerError("invalid frame size: %d", len(bytes))
 	}
 
 	// Attempt to read the fixarray

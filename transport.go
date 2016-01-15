@@ -123,9 +123,10 @@ func (t *transport) RunAsync() error {
 	return nil
 }
 
-func (t *transport) run() (err error) {
+func (t *transport) run() error {
 	// Packetize: do work
-	for err == nil {
+	var err RecoverableError
+	for err == nil || err.CanRecover() {
 		var rpc rpcMessage
 		if rpc, err = t.packetizer.NextFrame(); err == nil {
 			t.receiver.Receive(rpc)
@@ -148,7 +149,7 @@ func (t *transport) run() (err error) {
 	// Wait for the encoder to finish handling the now unblocked writes
 	<-encoderClosed
 
-	return
+	return err
 }
 
 func (t *transport) getDispatcher() (dispatcher, error) {
