@@ -18,8 +18,11 @@ type RPCErrorWrapper struct {
 	error
 }
 
-func newRPCErrorWrapper(err error) RPCErrorWrapper {
-	return RPCErrorWrapper{error: err}
+func newRPCErrorWrapper(e error) RecoverableError {
+	if err, ok := e.(RecoverableError); ok {
+		return err
+	}
+	return RPCErrorWrapper{error: e}
 }
 
 type PacketizerError struct {
@@ -142,27 +145,20 @@ func (c NilResultError) Error() string {
 }
 
 type RPCDecodeError struct {
+	RecoverableError
 	typ MethodType
 	len int
-	err error
-}
-
-func (r RPCDecodeError) CanRecover() bool {
-	if err, ok := r.err.(RecoverableError); ok {
-		return err.CanRecover()
-	}
-	return false
 }
 
 func (r RPCDecodeError) Error() string {
-	return fmt.Sprintf("RPC error: type %d, length %d, error: %v", r.typ, r.len, r.err)
+	return fmt.Sprintf("RPC error: type %d, length %d, error: %v", r.typ, r.len, r.RecoverableError)
 }
 
 func newRPCDecodeError(t MethodType, l int, e error) RPCDecodeError {
 	return RPCDecodeError{
-		typ: t,
-		len: l,
-		err: e,
+		RecoverableError: newRPCErrorWrapper(e),
+		typ:              t,
+		len:              l,
 	}
 }
 
