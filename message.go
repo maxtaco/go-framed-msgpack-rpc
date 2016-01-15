@@ -16,18 +16,18 @@ type rpcMessage interface {
 	DecodeMessage(int, decoder, *protocolHandler, *callContainer) error
 }
 
-type BasicRPCData struct {
+type basicRPCData struct {
 	ctx context.Context
 }
 
-func (r *BasicRPCData) Context() context.Context {
+func (r *basicRPCData) Context() context.Context {
 	if r.ctx == nil {
-		r.ctx = context.Background()
+		return context.Background()
 	}
 	return r.ctx
 }
 
-func (r *BasicRPCData) loadContext(l int, d decoder) error {
+func (r *basicRPCData) loadContext(l int, d decoder) error {
 	if l == 0 {
 		return nil
 	}
@@ -40,7 +40,7 @@ func (r *BasicRPCData) loadContext(l int, d decoder) error {
 }
 
 type rpcCallMessage struct {
-	BasicRPCData
+	basicRPCData
 	seqno seqNumber
 	name  string
 	arg   interface{}
@@ -188,7 +188,7 @@ func (r rpcResponseMessage) ResponseCh() chan *rpcResponseMessage {
 }
 
 type rpcNotifyMessage struct {
-	BasicRPCData
+	basicRPCData
 	name string
 	arg  interface{}
 	err  error

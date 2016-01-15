@@ -11,6 +11,7 @@ func TestRpcTags(t *testing.T) {
 	logTags := make(CtxRpcTags)
 
 	logTags["hello"] = "world"
+	logTags["foo"] = "bar"
 	ctx := AddRpcTagsToContext(context.Background(), logTags)
 
 	logTags2 := make(CtxRpcTags)
@@ -19,6 +20,7 @@ func TestRpcTags(t *testing.T) {
 
 	logTags, _ = RpcTagsFromContext(ctx)
 	require.Equal(t, "world2", logTags["hello"])
+	require.Equal(t, "bar", logTags["foo"])
 
 	outTags, ok := RpcTagsFromContext(ctx)
 
