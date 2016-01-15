@@ -125,13 +125,11 @@ func (t *transport) RunAsync() error {
 
 func (t *transport) run() (err error) {
 	// Packetize: do work
-	for {
+	for err == nil {
 		var rpc rpcMessage
 		if rpc, err = t.packetizer.NextFrame(); err == nil {
 			t.receiver.Receive(rpc)
-			continue
 		}
-		break
 	}
 
 	// Log packetizer completion
@@ -142,10 +140,13 @@ func (t *transport) run() (err error) {
 	close(t.stopCh)
 	t.dispatcher.Close()
 	<-t.receiver.Close(err)
-	<-t.enc.Close()
 
-	// Cleanup
+	// First inform the encoder that it should close
+	encoderClosed := t.enc.Close()
+	// Unblock any remaining writes
 	t.cdec.Close()
+	// Wait for the encoder to finish handling the now unblocked writes
+	<-encoderClosed
 
 	return
 }

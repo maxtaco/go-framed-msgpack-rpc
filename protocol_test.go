@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
@@ -97,16 +98,27 @@ func TestLongCallCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var longResult int
 	var err error
-	wait := runInBg(func() error {
-		longResult, err = cli.LongCall(ctx)
-		return err
-	})
-	cancel()
-	<-wait
-	require.EqualError(t, err, "call canceled: method test.1.testp.LongCall, seqid 0", "call should be canceled")
-	require.Equal(t, 0, longResult, "call should be canceled")
 
-	longResult, err = cli.LongCallResult(context.Background())
-	require.Nil(t, err, "call should have succeeded")
-	require.Equal(t, -1, longResult, "canceled call should have set the result to canceled")
+	type result struct {
+		res int
+		err error
+	}
+	resultCh := make(chan result)
+	runInBg(func() error {
+		longResult, err = cli.LongCall(ctx)
+		resultCh <- result{longResult, err}
+		longResult, err = cli.LongCallResult(context.Background())
+		resultCh <- result{longResult, err}
+		return nil
+	})
+	// TODO figure out a way to avoid this sleep
+	time.Sleep(time.Millisecond)
+	cancel()
+	res := <-resultCh
+	require.EqualError(t, res.err, context.Canceled.Error())
+	require.Equal(t, 0, res.res, "call should be canceled")
+
+	res = <-resultCh
+	require.Nil(t, res.err, "call should have succeeded")
+	require.Equal(t, -1, res.res, "canceled call should have set the result to canceled")
 }
