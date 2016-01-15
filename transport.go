@@ -125,8 +125,8 @@ func (t *transport) RunAsync() error {
 
 func (t *transport) run() error {
 	// Packetize: do work
-	var err RecoverableError
-	for err == nil || err.CanRecover() {
+	var err error
+	for shouldContinue(err) {
 		var rpc rpcMessage
 		if rpc, err = t.packetizer.NextFrame(); err == nil {
 			t.receiver.Receive(rpc)
@@ -172,4 +172,19 @@ func (t *transport) RegisterProtocol(p Protocol) error {
 
 func (t *transport) AddCloseListener(ch chan<- error) {
 	t.receiver.AddCloseListener(ch)
+}
+
+func shouldContinue(err error) bool {
+	if err == nil {
+		return true
+	}
+
+	switch e := err.(type) {
+	case RPCDecodeError:
+		return shouldContinue(e.err)
+	case CallNotFoundError:
+		return true
+	default:
+		return false
+	}
 }

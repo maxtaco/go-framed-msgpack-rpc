@@ -83,9 +83,7 @@ func TestReceiveResponseNilCall(t *testing.T) {
 	})
 
 	err := <-done
-	recoverableError, ok := err.(RecoverableError)
-	require.True(t, ok)
-	require.True(t, recoverableError.CanRecover())
+	require.True(t, shouldContinue(err))
 	require.EqualError(t, err, "Call not found for sequence number 0")
 }
 

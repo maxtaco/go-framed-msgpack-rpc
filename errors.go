@@ -4,29 +4,11 @@ import (
 	"fmt"
 )
 
-type RecoverableError interface {
-	error
-	CanRecover() bool
-}
-
-type BasicRPCError struct{}
-
-func (BasicRPCError) CanRecover() bool { return false }
-
 type RPCErrorWrapper struct {
-	BasicRPCError
 	error
-}
-
-func newRPCErrorWrapper(e error) RecoverableError {
-	if err, ok := e.(RecoverableError); ok {
-		return err
-	}
-	return RPCErrorWrapper{error: e}
 }
 
 type PacketizerError struct {
-	BasicRPCError
 	msg string
 }
 
@@ -39,7 +21,6 @@ func NewPacketizerError(d string, a ...interface{}) PacketizerError {
 }
 
 type DispatcherError struct {
-	BasicRPCError
 	msg string
 }
 
@@ -52,7 +33,6 @@ func NewDispatcherError(d string, a ...interface{}) DispatcherError {
 }
 
 type ReceiverError struct {
-	BasicRPCError
 	msg string
 }
 
@@ -65,7 +45,6 @@ func NewReceiverError(d string, a ...interface{}) ReceiverError {
 }
 
 type MethodNotFoundError struct {
-	BasicRPCError
 	p string
 	m string
 }
@@ -82,7 +61,6 @@ func (m MethodNotFoundError) Error() string {
 }
 
 type ProtocolNotFoundError struct {
-	BasicRPCError
 	p string
 }
 
@@ -95,7 +73,6 @@ func (p ProtocolNotFoundError) Error() string {
 }
 
 type AlreadyRegisteredError struct {
-	BasicRPCError
 	p string
 }
 
@@ -108,7 +85,6 @@ func (a AlreadyRegisteredError) Error() string {
 }
 
 type TypeError struct {
-	BasicRPCError
 	p string
 }
 
@@ -121,7 +97,6 @@ func NewTypeError(expected, actual interface{}) TypeError {
 }
 
 type CallNotFoundError struct {
-	BasicRPCError
 	seqno seqNumber
 }
 
@@ -133,10 +108,7 @@ func (c CallNotFoundError) Error() string {
 	return fmt.Sprintf("Call not found for sequence number %d", c.seqno)
 }
 
-func (CallNotFoundError) CanRecover() bool { return true }
-
 type NilResultError struct {
-	BasicRPCError
 	seqno seqNumber
 }
 
@@ -145,20 +117,20 @@ func (c NilResultError) Error() string {
 }
 
 type RPCDecodeError struct {
-	RecoverableError
+	err error
 	typ MethodType
 	len int
 }
 
 func (r RPCDecodeError) Error() string {
-	return fmt.Sprintf("RPC error: type %d, length %d, error: %v", r.typ, r.len, r.RecoverableError)
+	return fmt.Sprintf("RPC error: type %d, length %d, error: %v", r.typ, r.len, r.err)
 }
 
 func newRPCDecodeError(t MethodType, l int, e error) RPCDecodeError {
 	return RPCDecodeError{
-		RecoverableError: newRPCErrorWrapper(e),
-		typ:              t,
-		len:              l,
+		err: e,
+		typ: t,
+		len: l,
 	}
 }
 

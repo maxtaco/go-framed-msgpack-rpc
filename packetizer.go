@@ -9,7 +9,7 @@ import (
 )
 
 type packetizer interface {
-	NextFrame() (rpcMessage, RecoverableError)
+	NextFrame() (rpcMessage, error)
 }
 
 type packetHandler struct {
@@ -30,10 +30,10 @@ func newPacketHandler(reader io.Reader, protocols *protocolHandler, calls *callC
 	}
 }
 
-func (p *packetHandler) NextFrame() (rpcMessage, RecoverableError) {
+func (p *packetHandler) NextFrame() (rpcMessage, error) {
 	bytes, err := p.loadNextFrame()
 	if err != nil {
-		return nil, newRPCErrorWrapper(err)
+		return nil, err
 	}
 	if len(bytes) < 1 {
 		return nil, NewPacketizerError("invalid frame size: %d", len(bytes))
