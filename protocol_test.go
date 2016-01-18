@@ -100,18 +100,20 @@ func TestLongCallCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = AddRpcTagsToContext(ctx, CtxRpcTags{"hello": []string{"world"}})
-	var longResult int
-	var err error
 
 	type result struct {
-		res int
+		res interface{}
 		err error
 	}
 	resultCh := make(chan result)
 	runInBg(func() error {
+		var longResult interface{}
+		var err error
 		longResult, err = cli.LongCall(ctx)
 		resultCh <- result{longResult, err}
 		longResult, err = cli.LongCallResult(context.Background())
+		resultCh <- result{longResult, err}
+		longResult, err = cli.LongCallDebugTags(context.Background())
 		resultCh <- result{longResult, err}
 		return nil
 	})
@@ -122,11 +124,11 @@ func TestLongCallCancel(t *testing.T) {
 	require.EqualError(t, res.err, context.Canceled.Error())
 	require.Equal(t, 0, res.res, "call should be canceled")
 
-	longResult, err = cli.LongCallResult(context.Background())
-	require.Nil(t, err, "call should have succeeded")
-	require.Equal(t, -1, longResult, "canceled call should have set the result to canceled")
+	res = <-resultCh
+	require.Nil(t, res.err, "call should have succeeded")
+	require.Equal(t, -1, res.res, "canceled call should have set the result to canceled")
 
-	debugTags, err := cli.LongCallDebugTags(context.Background())
-	require.Nil(t, err, "call should have succeeded")
-	require.Equal(t, CtxRpcTags{"hello": []interface{}{"world"}}, debugTags, "canceled call should have set the debug tags")
+	res = <-resultCh
+	require.Nil(t, res.err, "call should have succeeded")
+	require.Equal(t, CtxRpcTags{"hello": []interface{}{"world"}}, res.res, "canceled call should have set the debug tags")
 }
