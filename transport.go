@@ -175,15 +175,13 @@ func (t *transport) AddCloseListener(ch chan<- error) {
 }
 
 func shouldContinue(err error) bool {
-	if err == nil {
-		return true
-	}
-
 	switch e := err.(type) {
-	case RPCDecodeError:
-		return shouldContinue(e.err)
+	case nil:
+		return true
 	case CallNotFoundError:
 		return true
+	case RPCDecodeError:
+		return shouldContinue(e.err)
 	default:
 		return false
 	}
