@@ -83,6 +83,7 @@ func TestReceiveResponseNilCall(t *testing.T) {
 	})
 
 	err := <-done
+	require.True(t, shouldContinue(err))
 	require.EqualError(t, err, "Call not found for sequence number 0")
 }
 
