@@ -181,6 +181,10 @@ func shouldContinue(err error) bool {
 		return true
 	case CallNotFoundError:
 		return true
+	case MethodNotFoundError:
+		return true
+	case ProtocolNotFoundError:
+		return true
 	default:
 		return false
 	}
