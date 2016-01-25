@@ -236,7 +236,7 @@ func (a TestClient) Add(ctx context.Context, arg AddArgs) (ret int, err error) {
 }
 
 func (a TestClient) Broken() (err error) {
-	err = a.Call(nil, "test.1.testp.broken", nil, nil)
+	err = a.Call(context.Background(), "test.1.testp.broken", nil, nil)
 	return
 }
 
