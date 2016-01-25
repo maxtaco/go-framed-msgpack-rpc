@@ -64,8 +64,11 @@ func TestBrokenCall(t *testing.T) {
 	cli, listener, conn := prepTest(t)
 	defer endTest(t, conn, listener)
 
-	err := cli.Broken()
-	require.Error(t, err, "Called nonexistent method, expected error")
+	err := cli.BrokenMethod()
+	require.EqualError(t, err, "method 'broken' not found in protocol 'test.1.testp'")
+
+	err = cli.BrokenProtocol()
+	require.EqualError(t, err, "protocol not found: test.2.testp")
 }
 
 func TestNotify(t *testing.T) {
