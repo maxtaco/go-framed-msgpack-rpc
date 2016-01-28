@@ -99,18 +99,21 @@ func TestLongCallCancel(t *testing.T) {
 	defer endTest(t, conn, listener)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	var longResult int
-	var err error
+	ctx = AddRpcTagsToContext(ctx, CtxRpcTags{"hello": []string{"world"}})
 
 	type result struct {
-		res int
+		res interface{}
 		err error
 	}
 	resultCh := make(chan result)
 	runInBg(func() error {
+		var longResult interface{}
+		var err error
 		longResult, err = cli.LongCall(ctx)
 		resultCh <- result{longResult, err}
 		longResult, err = cli.LongCallResult(context.Background())
+		resultCh <- result{longResult, err}
+		longResult, err = cli.LongCallDebugTags(context.Background())
 		resultCh <- result{longResult, err}
 		return nil
 	})
@@ -124,4 +127,8 @@ func TestLongCallCancel(t *testing.T) {
 	res = <-resultCh
 	require.Nil(t, res.err, "call should have succeeded")
 	require.Equal(t, -1, res.res, "canceled call should have set the result to canceled")
+
+	res = <-resultCh
+	require.Nil(t, res.err, "call should have succeeded")
+	require.Equal(t, CtxRpcTags{"hello": []interface{}{"world"}}, res.res, "canceled call should have set the debug tags")
 }
