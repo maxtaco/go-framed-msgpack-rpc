@@ -62,10 +62,15 @@ func TestDispatchCanceledBeforeResult(t *testing.T) {
 
 	cancel()
 
-	err := <-done
-	require.EqualError(t, err, context.Canceled.Error())
+	// Should not hang.
+	sendResponse(c, nil)
 
-	require.Nil(t, calls.RetrieveCall(0), "Expected call to be removed from the container")
+	err := <-done
+	require.True(t, err == nil || err == context.Canceled,
+		"Expected call to complete successfully or be cancelled")
+
+	require.Nil(t, calls.RetrieveCall(0),
+		"Expected call to be removed from the container")
 
 	d.Close()
 }
@@ -82,7 +87,11 @@ func TestDispatchCanceledAfterResult(t *testing.T) {
 	cancel()
 
 	err := <-done
-	require.Nil(t, err, "Expected call to complete prior to cancel")
+	require.True(t, err == nil || err == context.Canceled,
+		"Expected call to complete successfully or be cancelled")
+
+	require.Nil(t, calls.RetrieveCall(0),
+		"Expected call to be removed from the container")
 
 	d.Close()
 }
@@ -111,7 +120,7 @@ func TestDispatchCallAfterClose(t *testing.T) {
 	require.Equal(t, io.EOF, err)
 }
 
-func TestDispatchCancel(t *testing.T) {
+func TestDispatchCancelEndToEnd(t *testing.T) {
 	dispatchConn, _ := net.Pipe()
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
 	enc := newFramedMsgpackEncoder(dispatchConn)
