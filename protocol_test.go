@@ -13,6 +13,11 @@ import (
 
 var testPort int = 8089
 
+type longCallResult struct {
+	res interface{}
+	err error
+}
+
 func prepServer(listener chan error) error {
 	server := &server{port: testPort}
 
@@ -101,20 +106,16 @@ func TestLongCallCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = AddRpcTagsToContext(ctx, CtxRpcTags{"hello": []string{"world"}})
 
-	type result struct {
-		res interface{}
-		err error
-	}
-	resultCh := make(chan result)
+	resultCh := make(chan longCallResult)
 	runInBg(func() error {
 		var longResult interface{}
 		var err error
 		longResult, err = cli.LongCall(ctx)
-		resultCh <- result{longResult, err}
+		resultCh <- longCallResult{longResult, err}
 		longResult, err = cli.LongCallResult(context.Background())
-		resultCh <- result{longResult, err}
+		resultCh <- longCallResult{longResult, err}
 		longResult, err = cli.LongCallDebugTags(context.Background())
-		resultCh <- result{longResult, err}
+		resultCh <- longCallResult{longResult, err}
 		return nil
 	})
 	// TODO figure out a way to avoid this sleep
@@ -126,9 +127,29 @@ func TestLongCallCancel(t *testing.T) {
 
 	res = <-resultCh
 	require.Nil(t, res.err, "call should have succeeded")
-	require.Equal(t, -1, res.res, "canceled call should have set the result to canceled")
+	require.Equal(t, -1, res.res, "canceled call should have set the longCallResult to canceled")
 
 	res = <-resultCh
 	require.Nil(t, res.err, "call should have succeeded")
 	require.Equal(t, CtxRpcTags{"hello": []interface{}{"world"}}, res.res, "canceled call should have set the debug tags")
+}
+
+func TestClosedConnection(t *testing.T) {
+	cli, listener, conn := prepTest(t)
+	defer endTest(t, conn, listener)
+
+	resultCh := make(chan longCallResult)
+	runInBg(func() error {
+		var longResult interface{}
+		var err error
+		longResult, err = cli.LongCall(context.Background())
+		resultCh <- longCallResult{longResult, err}
+		return nil
+	})
+	// TODO figure out a way to avoid this sleep
+	time.Sleep(time.Millisecond)
+	conn.Close()
+	res := <-resultCh
+	require.EqualError(t, res.err, io.EOF.Error())
+	require.Equal(t, 0, res.res)
 }

@@ -6,33 +6,34 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/context"
 )
 
-func testReceive(t *testing.T, p *Protocol, rpc rpcMessage) error {
+func testReceive(t *testing.T, p *Protocol, rpc rpcMessage) (receiver, chan error) {
 	conn1, conn2 := net.Pipe()
-	receiveOut := newFramedMsgpackEncoder(conn1)
+	receiveOut := newFramedMsgpackEncoder(conn2)
 
 	protHandler := createMessageTestProtocol()
 	if p != nil {
 		protHandler.registerProtocol(*p)
 	}
-	pkt := newPacketHandler(conn2, protHandler, newCallContainer())
+	pkt := newPacketHandler(conn1, protHandler, newCallContainer())
 	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
 
 	r := newReceiveHandler(receiveOut, protHandler, logFactory.NewLog(nil))
 
-	errCh := make(chan error)
-	go func() {
-		_, err := pkt.NextFrame()
-		errCh <- err
-	}()
-
+	errCh := make(chan error, 1)
 	err := r.Receive(rpc)
 	if err != nil {
-		return err
+		errCh <- err
+	} else {
+		go func() {
+			_, err := pkt.NextFrame()
+			errCh <- err
+		}()
 	}
 
-	return <-errCh
+	return r, errCh
 }
 
 func makeCall(seq seqNumber, name string, arg interface{}) *rpcCallMessage {
@@ -59,11 +60,12 @@ func TestReceiveResponse(t *testing.T) {
 		"hi",
 	)
 	go func() {
-		err := testReceive(
+		_, errCh := testReceive(
 			t,
 			nil,
 			c,
 		)
+		err := <-errCh
 		require.Nil(t, err)
 	}()
 
@@ -73,35 +75,52 @@ func TestReceiveResponse(t *testing.T) {
 
 func TestReceiveResponseNilCall(t *testing.T) {
 	c := &rpcResponseMessage{c: &call{}}
-	done := runInBg(func() error {
-		err := testReceive(
-			t,
-			nil,
-			c,
-		)
-		return err
-	})
+	_, errCh := testReceive(
+		t,
+		nil,
+		c,
+	)
+	err := <-errCh
 
-	err := <-done
 	require.True(t, shouldContinue(err))
 	require.EqualError(t, err, "Call not found for sequence number 0")
 }
 
 func TestCloseReceiver(t *testing.T) {
-	logFactory := NewSimpleLogFactory(SimpleLogOutput{}, SimpleLogOptions{})
-	conn1, _ := net.Pipe()
-	receiveOut := newFramedMsgpackEncoder(conn1)
-	r := newReceiveHandler(
-		receiveOut,
-		newProtocolHandler(nil),
-		logFactory.NewLog(nil),
+	// Call error status
+	waitCh := make(chan error, 1)
+	p := &Protocol{
+		Name: "waiter",
+		Methods: map[string]ServeHandlerDescription{
+			"wait": {
+				MakeArg: func() interface{} {
+					return nil
+				},
+				Handler: func(c context.Context, i interface{}) (interface{}, error) {
+					<-c.Done()
+					waitCh <- c.Err()
+					return nil, c.Err()
+				},
+				MethodType: MethodCall,
+			},
+		},
+	}
+	receiver, _ := testReceive(
+		t,
+		p,
+		makeCall(
+			0,
+			"waiter.wait",
+			nil,
+		),
 	)
-	// Buffer so the write doesn't block and thus we don't need a goroutine
+	// Receiver error status
 	errCh := make(chan error, 1)
-
-	r.AddCloseListener(errCh)
-	r.Close(io.EOF)
-
+	receiver.AddCloseListener(errCh)
+	receiver.Close(io.EOF)
 	err := <-errCh
 	require.EqualError(t, err, io.EOF.Error())
+
+	err = <-waitCh
+	require.EqualError(t, err, context.Canceled.Error())
 }
